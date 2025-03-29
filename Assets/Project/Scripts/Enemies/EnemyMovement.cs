@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using TowerDefense.Core; // Add namespace for GameManager access
 
 /// <summary>
 /// Controls enemy movement along a path in the tower defense game.
@@ -24,6 +25,12 @@ public class EnemyMovement : MonoBehaviour
     [Tooltip("Y position offset from the path (height above the grid)")]
     [SerializeField] private float heightOffset = 0.5f;
     
+    [Tooltip("Maximum path initialization attempts")]
+    [SerializeField] private int maxInitAttempts = 3;
+    
+    [Tooltip("Delay between path initialization attempts")]
+    [SerializeField] private float initRetryDelay = 0.2f;
+    
     [Header("Effect Settings")]
     [Tooltip("Visual effect to play when the enemy reaches the end of the path")]
     [SerializeField] private GameObject reachEndEffectPrefab;
@@ -41,6 +48,8 @@ public class EnemyMovement : MonoBehaviour
     private Vector3 currentMoveDirection;
     private bool pathComplete = false;
     private bool isMovementPaused = false;
+    private bool isPathInitialized = false;
+    private int initAttempts = 0;
     
     // Speed modifiers (for slowing effects from towers)
     private float speedModifier = 1.0f;
@@ -67,81 +76,89 @@ public class EnemyMovement : MonoBehaviour
     {
         // Find managers if they exist in the scene
         gridManager = FindObjectOfType<GridManager>();
-        pathfindingManager = FindObjectOfType<PathfindingManager>();
         
-        if (gridManager == null || pathfindingManager == null)
+        if (gridManager == null)
         {
-            Debug.LogError("EnemyMovement: Could not find GridManager or PathfindingManager!");
+            Debug.LogError("EnemyMovement: Could not find GridManager!");
         }
     }
     
     private void Start()
     {
         // Add debug logging to track initialization
-        Debug.Log("EnemyMovement Start - Initializing path");
-    
-        // Get the current path from the pathfinding manager
-        InitializePath();
-    
-        // Add a fallback if initialization fails
-        if (pathWaypoints == null || pathWaypoints.Count == 0)
-        {
-            Debug.LogWarning("Path initialization failed - creating default path");
-            CreateDefaultPath();
-        }
-    }
-
-    // Add a fallback method to create a simple default path if pathfinding fails
-    private void CreateDefaultPath()
-    {
-        // Create a simple straight-line path as fallback
-        pathWaypoints = new List<Vector2Int>();
-        worldWaypoints = new List<Vector3>();
-    
-        // Add current position as first waypoint
-        Vector3 startPos = transform.position;
-        worldWaypoints.Add(startPos);
-    
-        // Add a point 10 units forward as second waypoint
-        Vector3 endPos = startPos + transform.forward * 10f;
-        worldWaypoints.Add(endPos);
-    
-        currentWaypointIndex = 1;
+        Debug.Log($"EnemyMovement Start - Initializing path for {gameObject.name}");
+        
+        // Delay path initialization to ensure PathfindingManager is ready
+        StartCoroutine(InitializePathWithDelay());
     }
     
-    private void Update()
+    /// <summary>
+    /// Coroutine to try initializing the path with a delay, with multiple attempts if needed
+    /// </summary>
+    private IEnumerator InitializePathWithDelay()
     {
-        if (pathComplete || isMovementPaused || pathWaypoints == null || currentWaypointIndex >= worldWaypoints.Count)
-            return;
+        // Small initial delay to allow other systems to initialize
+        yield return new WaitForSeconds(0.1f);
         
-        // Update speed modifiers
-        UpdateSpeedModifiers();
-        
-        // Move towards current waypoint
-        MoveTowardsWaypoint();
-        
-        // Rotate towards movement direction
-        if (smoothRotation && currentMoveDirection != Vector3.zero)
+        // Try to initialize the path, with multiple attempts if needed
+        while (!isPathInitialized && initAttempts < maxInitAttempts)
         {
-            RotateTowardsDirection();
+            initAttempts++;
+            
+            // If we successfully initialize the path, break out of the loop
+            if (TryInitializePath())
+            {
+                isPathInitialized = true;
+                Debug.Log($"EnemyMovement: Path successfully initialized for {gameObject.name} on attempt {initAttempts}");
+                break;
+            }
+            
+            // If we've reached the maximum number of attempts, create a default path
+            if (initAttempts >= maxInitAttempts)
+            {
+                Debug.LogWarning($"EnemyMovement: Max path initialization attempts reached for {gameObject.name}. Creating default path.");
+                CreateDefaultPath();
+                isPathInitialized = true;
+                break;
+            }
+            
+            // Wait before trying again
+            Debug.Log($"EnemyMovement: Path initialization attempt {initAttempts} failed. Retrying in {initRetryDelay} seconds.");
+            yield return new WaitForSeconds(initRetryDelay);
         }
     }
     
     /// <summary>
-    /// Initializes the enemy's path based on the current pathfinding data
+    /// Attempts to initialize the path from the pathfinding manager
     /// </summary>
-    private void InitializePath()
+    /// <returns>True if successful, false otherwise</returns>
+    private bool TryInitializePath()
     {
+        // Verify we have the required references
         if (pathfindingManager == null)
-            return;
+        {
+            pathfindingManager = FindObjectOfType<PathfindingManager>();
+            if (pathfindingManager == null)
+            {
+                Debug.LogWarning("EnemyMovement: Could not find PathfindingManager!");
+                return false;
+            }
+        }
+        
+        // Check if the pathfinding manager has calculated a path yet
+        if (!pathfindingManager.IsPathCalculated())
+        {
+            Debug.LogWarning("EnemyMovement: PathfindingManager hasn't calculated a path yet!");
+            return false;
+        }
         
         // Get the path from the pathfinding manager
         pathWaypoints = pathfindingManager.GetCurrentPath();
         
         if (pathWaypoints == null || pathWaypoints.Count < 2)
         {
-            Debug.LogWarning("EnemyMovement: Invalid path received!");
-            return;
+            Debug.LogWarning($"EnemyMovement: Invalid path received for {gameObject.name}!");
+            return false;
         }
         
         // Convert grid positions to world positions
@@ -167,6 +184,47 @@ public class EnemyMovement : MonoBehaviour
             {
                 transform.rotation = Quaternion.LookRotation(direction);
             }
+        }
+        
+        return true;
+    }
+
+    // Add a fallback method to create a simple default path if pathfinding fails
+    private void CreateDefaultPath()
+    {
+        // Create a simple straight-line path as fallback
+        pathWaypoints = new List<Vector2Int>();
+        worldWaypoints = new List<Vector3>();
+    
+        // Add current position as first waypoint
+        Vector3 startPos = transform.position;
+        worldWaypoints.Add(startPos);
+    
+        // Add a point 10 units forward as second waypoint
+        Vector3 endPos = startPos + transform.forward * 10f;
+        worldWaypoints.Add(endPos);
+    
+        currentWaypointIndex = 1;
+        
+        Debug.LogWarning($"EnemyMovement: Created default path for {gameObject.name} from {startPos} to {endPos}");
+    }
+    
+    private void Update()
+    {
+        if (pathComplete || isMovementPaused || !isPathInitialized || 
+            worldWaypoints == null || currentWaypointIndex >= worldWaypoints.Count)
+            return;
+        
+        // Update speed modifiers
+        UpdateSpeedModifiers();
+        
+        // Move towards current waypoint
+        MoveTowardsWaypoint();
+        
+        // Rotate towards movement direction
+        if (smoothRotation && currentMoveDirection != Vector3.zero)
+        {
+            RotateTowardsDirection();
         }
     }
     
@@ -269,7 +327,7 @@ public class EnemyMovement : MonoBehaviour
         pathComplete = true;
         
         // Notify the game manager that an enemy reached the end
-        GameManager gameManager = FindObjectOfType<GameManager>();
+        GameManager gameManager = GameManager.Instance;
         if (gameManager != null)
         {
             gameManager.EnemyReachedEnd(gameObject);
@@ -324,13 +382,11 @@ public class EnemyMovement : MonoBehaviour
     /// </summary>
     public void RecalculatePath()
     {
-        // Only recalculate if we haven't completed the path yet
-        if (!pathComplete)
+        // Only recalculate if we haven't completed the path yet and path is initialized
+        if (!pathComplete && isPathInitialized && pathfindingManager != null)
         {
             // Store current progress ratio along path segment
             Vector3 currentPos = transform.position;
-            Vector3 currentTarget = worldWaypoints[currentWaypointIndex];
-            Vector3 previousWaypoint = worldWaypoints[currentWaypointIndex - 1];
             
             // Get updated path
             pathWaypoints = pathfindingManager.GetCurrentPath();

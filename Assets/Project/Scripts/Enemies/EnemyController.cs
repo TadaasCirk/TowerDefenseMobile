@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using TowerDefense.Core; // Add this using directive to access the GameManager
 
 /// <summary>
 /// Controls the core functionality of an enemy in the tower defense game.
@@ -206,7 +207,7 @@ public class EnemyController : MonoBehaviour
             OnEnemyReachedEnd?.Invoke(this);
             
             // Find game manager and notify
-            GameManager gameManager = FindObjectOfType<GameManager>();
+            GameManager gameManager = GameManager.Instance;
             if (gameManager != null)
             {
                 gameManager.PlayerTakeDamage(damageToPlayer);
@@ -218,7 +219,7 @@ public class EnemyController : MonoBehaviour
             OnEnemyDefeated?.Invoke(this);
             
             // Find game manager and reward player
-            GameManager gameManager = FindObjectOfType<GameManager>();
+            GameManager gameManager = GameManager.Instance;
             if (gameManager != null)
             {
                 gameManager.EnemyDefeated(goldReward, experienceReward);
