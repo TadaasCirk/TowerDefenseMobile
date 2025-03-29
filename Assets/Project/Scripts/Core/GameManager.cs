@@ -55,13 +55,83 @@ namespace TowerDefense.Core
             // Initialize player stats
             currentHealth = playerHealth;
             currentGold = startingGold;
+            
+            // Register any additional interfaces this manager implements
+            // Example: ServiceLocator.Register<IPlayerStats>(this);
+            
+            Debug.Log("GameManager initialized and registered with ServiceLocator");
         }
 
         private void Start()
         {
+            // Subscribe to global events
+            SubscribeToEvents();
+            
             // Trigger initial events to update UI
             OnHealthChanged?.Invoke(currentHealth);
             OnGoldChanged?.Invoke(currentGold);
+        }
+        
+        /// <summary>
+        /// Subscribe to global events from GameEvents
+        /// </summary>
+        private void SubscribeToEvents()
+        {
+            GameEvents.OnEnemyReachedEnd += HandleEnemyReachedEnd;
+            GameEvents.OnEnemyDefeated += HandleEnemyDefeated;
+        }
+        
+        /// <summary>
+        /// Unsubscribe from global events
+        /// </summary>
+        private void UnsubscribeFromEvents()
+        {
+            GameEvents.OnEnemyReachedEnd -= HandleEnemyReachedEnd;
+            GameEvents.OnEnemyDefeated -= HandleEnemyDefeated;
+        }
+        
+        /// <summary>
+        /// Handle enemy reaching the end event
+        /// </summary>
+        private void HandleEnemyReachedEnd(int damage)
+        {
+            PlayerTakeDamage(damage);
+        }
+        
+        /// <summary>
+        /// Handle enemy defeated event
+        /// </summary>
+        private void HandleEnemyDefeated(int goldReward, int experienceReward)
+        {
+            // Add gold
+            currentGold += goldReward;
+            OnGoldChanged?.Invoke(currentGold);
+            
+            // Add experience
+            playerExperience += experienceReward;
+            OnExperienceGained?.Invoke(playerExperience);
+        }
+        
+        /// <summary>
+        /// Clean up when the object is destroyed
+        /// </summary>
+        protected override void OnDestroy()
+        {
+            // Unsubscribe from events
+            UnsubscribeFromEvents();
+            
+            // Clean up any events
+            OnHealthChanged = null;
+            OnGoldChanged = null;
+            OnExperienceGained = null;
+            OnGameSpeedChanged = null;
+            OnGameOver = null;
+            OnLevelComplete = null;
+            OnGamePaused = null;
+            OnGameResumed = null;
+            
+            // Call base to unregister from ServiceLocator
+            base.OnDestroy();
         }
 
         /// <summary>
@@ -84,31 +154,6 @@ namespace TowerDefense.Core
             {
                 GameOver();
             }
-        }
-
-        /// <summary>
-        /// Handles enemy defeat rewards
-        /// </summary>
-        public void EnemyDefeated(int goldReward, int experienceReward)
-        {
-            if (isGameOver) return;
-            
-            // Add gold
-            currentGold += goldReward;
-            OnGoldChanged?.Invoke(currentGold);
-            
-            // Add experience
-            playerExperience += experienceReward;
-            OnExperienceGained?.Invoke(playerExperience);
-        }
-
-        /// <summary>
-        /// Handles when an enemy reaches the end point
-        /// </summary>
-        public void EnemyReachedEnd(GameObject enemy)
-        {
-            // Logic already handled in PlayerTakeDamage, 
-            // which is called from EnemyController
         }
 
         /// <summary>

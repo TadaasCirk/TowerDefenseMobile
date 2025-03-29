@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using System;
+using TowerDefense.Core;
 
 /// <summary>
 /// Manages spawning of enemies in waves for the tower defense game.
@@ -35,6 +36,10 @@ public class EnemySpawner : MonoBehaviour
     [Tooltip("Show debug information")]
     [SerializeField] private bool showDebug = true;
     
+    // Dependencies
+    private GridManager gridManager;
+    private GameManager gameManager;
+    
     // Wave state
     private int currentWaveIndex = -1;
     private WaveData currentWave;
@@ -56,30 +61,88 @@ public class EnemySpawner : MonoBehaviour
     public event Action<float> OnWaveProgressUpdate; // 0-1 progress value
     public event Action<float> OnNextWaveCountdown; // Seconds until next wave
     
+    private void Awake()
+    {
+        // We'll resolve dependencies in Start
+    }
+    
     private void Start()
     {
-        // Find references if not assigned
+        // Find dependencies using ServiceLocator
+        ResolveDependencies();
+        
+        // Set up spawn point
+        SetupSpawnPoint();
+        
+        // Initialize next wave time
+        if (autoStartWaves)
+        {
+            nextWaveStartTime = Time.time + initialDelay;
+        }
+    }
+    
+    /// <summary>
+    /// Resolves dependencies using ServiceLocator
+    /// </summary>
+    private void ResolveDependencies()
+    {
+        // Try to get dependencies from ServiceLocator
         if (pathfindingManager == null)
         {
-            pathfindingManager = FindObjectOfType<PathfindingManager>();
+            pathfindingManager = ServiceLocator.Get<PathfindingManager>(true);
+            
+            // Fallback to FindObjectOfType
+            if (pathfindingManager == null)
+            {
+                pathfindingManager = FindObjectOfType<PathfindingManager>();
+                if (pathfindingManager == null)
+                {
+                    Debug.LogWarning("EnemySpawner: Could not find PathfindingManager!");
+                }
+            }
         }
         
-        if (usePathEntryPoint && pathfindingManager != null)
+        // Get GridManager
+        gridManager = ServiceLocator.Get<GridManager>(true);
+        if (gridManager == null)
+        {
+            gridManager = FindObjectOfType<GridManager>();
+            if (gridManager == null)
+            {
+                Debug.LogWarning("EnemySpawner: Could not find GridManager!");
+            }
+        }
+        
+        // Get GameManager
+        gameManager = ServiceLocator.Get<GameManager>(true);
+        if (gameManager == null)
+        {
+            gameManager = FindObjectOfType<GameManager>();
+            if (gameManager == null)
+            {
+                Debug.LogWarning("EnemySpawner: Could not find GameManager!");
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Sets up the spawn point, either from defined transform or from path entry
+    /// </summary>
+    private void SetupSpawnPoint()
+    {
+        if (usePathEntryPoint && pathfindingManager != null && gridManager != null)
         {
             // Get the entry point from pathfinding manager
             if (spawnPoint == null)
             {
                 Vector2Int entryGridPos = pathfindingManager.GetEntryGridPosition();
-                GridManager gridManager = FindObjectOfType<GridManager>();
-                if (gridManager != null)
-                {
-                    Vector3 entryWorldPos = gridManager.GetWorldPosition(entryGridPos);
-                    // Create a spawn point Transform at the entry position
-                    GameObject spawnPointObj = new GameObject("SpawnPoint");
-                    spawnPointObj.transform.position = entryWorldPos;
-                    spawnPointObj.transform.SetParent(transform);
-                    spawnPoint = spawnPointObj.transform;
-                }
+                Vector3 entryWorldPos = gridManager.GetWorldPosition(entryGridPos);
+                
+                // Create a spawn point Transform at the entry position
+                GameObject spawnPointObj = new GameObject("SpawnPoint");
+                spawnPointObj.transform.position = entryWorldPos;
+                spawnPointObj.transform.SetParent(transform);
+                spawnPoint = spawnPointObj.transform;
             }
         }
         
@@ -87,12 +150,6 @@ public class EnemySpawner : MonoBehaviour
         {
             Debug.LogError("EnemySpawner: No spawn point assigned!");
             spawnPoint = transform;
-        }
-        
-        // Initialize next wave time
-        if (autoStartWaves)
-        {
-            nextWaveStartTime = Time.time + initialDelay;
         }
     }
     
@@ -405,6 +462,16 @@ public class EnemySpawner : MonoBehaviour
         }
         
         Debug.LogWarning($"EnemySpawner: Could not find enemy prefab named {enemyPrefabName} for testing");
+    }
+    
+    private void OnDestroy()
+    {
+        // Clean up event subscriptions to prevent memory leaks
+        OnWaveStart = null;
+        OnWaveComplete = null;
+        OnAllWavesComplete = null;
+        OnWaveProgressUpdate = null;
+        OnNextWaveCountdown = null;
     }
 }
 
