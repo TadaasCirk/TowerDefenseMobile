@@ -1,0 +1,447 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using System;
+
+/// <summary>
+/// Manages spawning of enemies in waves for the tower defense game.
+/// </summary>
+public class EnemySpawner : MonoBehaviour
+{
+    [Header("Spawn Settings")]
+    [Tooltip("Transform where enemies will spawn")]
+    [SerializeField] private Transform spawnPoint;
+    
+    [Tooltip("Should enemies be spawned at the path entry point?")]
+    [SerializeField] private bool usePathEntryPoint = true;
+    
+    [Tooltip("Reference to the pathfinding manager")]
+    [SerializeField] private PathfindingManager pathfindingManager;
+    
+    [Header("Wave Settings")]
+    [Tooltip("List of waves to spawn")]
+    [SerializeField] private List<WaveData> waves = new List<WaveData>();
+    
+    [Tooltip("Time between waves in seconds")]
+    [SerializeField] private float timeBetweenWaves = 10f;
+    
+    [Tooltip("Should waves automatically start?")]
+    [SerializeField] private bool autoStartWaves = true;
+    
+    [Tooltip("Time before first wave starts")]
+    [SerializeField] private float initialDelay = 5f;
+    
+    [Header("Debug")]
+    [Tooltip("Show debug information")]
+    [SerializeField] private bool showDebug = true;
+    
+    // Wave state
+    private int currentWaveIndex = -1;
+    private WaveData currentWave;
+    private int enemiesRemainingInWave = 0;
+    private int totalEnemiesInCurrentWave = 0;
+    private int enemiesSpawnedInCurrentWave = 0;
+    private bool isSpawningWave = false;
+    private float waveStartTime = 0f;
+    private float nextWaveStartTime = 0f;
+    
+    // Enemy tracking
+    private List<EnemyController> activeEnemies = new List<EnemyController>();
+    private Dictionary<string, GameObject> enemyPrefabCache = new Dictionary<string, GameObject>();
+    
+    // Events
+    public event Action<int> OnWaveStart;
+    public event Action<int> OnWaveComplete;
+    public event Action<int> OnAllWavesComplete;
+    public event Action<float> OnWaveProgressUpdate; // 0-1 progress value
+    public event Action<float> OnNextWaveCountdown; // Seconds until next wave
+    
+    private void Start()
+    {
+        // Find references if not assigned
+        if (pathfindingManager == null)
+        {
+            pathfindingManager = FindObjectOfType<PathfindingManager>();
+        }
+        
+        if (usePathEntryPoint && pathfindingManager != null)
+        {
+            // Get the entry point from pathfinding manager
+            if (spawnPoint == null)
+            {
+                Vector2Int entryGridPos = pathfindingManager.GetEntryGridPosition();
+                GridManager gridManager = FindObjectOfType<GridManager>();
+                if (gridManager != null)
+                {
+                    Vector3 entryWorldPos = gridManager.GetWorldPosition(entryGridPos);
+                    // Create a spawn point Transform at the entry position
+                    GameObject spawnPointObj = new GameObject("SpawnPoint");
+                    spawnPointObj.transform.position = entryWorldPos;
+                    spawnPointObj.transform.SetParent(transform);
+                    spawnPoint = spawnPointObj.transform;
+                }
+            }
+        }
+        
+        if (spawnPoint == null)
+        {
+            Debug.LogError("EnemySpawner: No spawn point assigned!");
+            spawnPoint = transform;
+        }
+        
+        // Initialize next wave time
+        if (autoStartWaves)
+        {
+            nextWaveStartTime = Time.time + initialDelay;
+        }
+    }
+    
+    private void Update()
+    {
+        // Auto-start waves if enabled
+        if (autoStartWaves && !isSpawningWave && currentWaveIndex < waves.Count - 1)
+        {
+            float timeUntilNextWave = nextWaveStartTime - Time.time;
+            
+            // Notify listeners about countdown
+            OnNextWaveCountdown?.Invoke(timeUntilNextWave);
+            
+            // Start next wave when timer expires
+            if (Time.time >= nextWaveStartTime)
+            {
+                StartNextWave();
+            }
+        }
+        
+        // Update wave progress
+        if (isSpawningWave && totalEnemiesInCurrentWave > 0)
+        {
+            // Calculate progress based on enemies defeated
+            float progress = 1f - ((float)enemiesRemainingInWave / totalEnemiesInCurrentWave);
+            OnWaveProgressUpdate?.Invoke(progress);
+            
+            // Check if wave is complete (all enemies spawned and none active)
+            if (enemiesSpawnedInCurrentWave >= totalEnemiesInCurrentWave && activeEnemies.Count == 0)
+            {
+                CompleteWave();
+            }
+        }
+        
+        // Clean up any null references in active enemies list
+        CleanupActiveEnemiesList();
+    }
+    
+    /// <summary>
+    /// Starts the next wave in sequence
+    /// </summary>
+    public void StartNextWave()
+    {
+        if (isSpawningWave)
+        {
+            Debug.LogWarning("EnemySpawner: Cannot start next wave while current wave is in progress");
+            return;
+        }
+        
+        currentWaveIndex++;
+        
+        if (currentWaveIndex >= waves.Count)
+        {
+            Debug.Log("EnemySpawner: All waves completed!");
+            OnAllWavesComplete?.Invoke(waves.Count);
+            return;
+        }
+        
+        // Start the wave
+        StartWave(currentWaveIndex);
+    }
+    
+    /// <summary>
+    /// Starts a specific wave by index
+    /// </summary>
+    public void StartWave(int waveIndex)
+    {
+        if (waveIndex < 0 || waveIndex >= waves.Count)
+        {
+            Debug.LogError($"EnemySpawner: Invalid wave index: {waveIndex}");
+            return;
+        }
+        
+        if (isSpawningWave)
+        {
+            Debug.LogWarning("EnemySpawner: Cannot start wave while another is in progress");
+            return;
+        }
+        
+        // Set current wave
+        currentWaveIndex = waveIndex;
+        currentWave = waves[waveIndex];
+        
+        // Calculate total enemies in this wave
+        totalEnemiesInCurrentWave = 0;
+        foreach (var enemyGroup in currentWave.enemyGroups)
+        {
+            totalEnemiesInCurrentWave += enemyGroup.count;
+        }
+        
+        enemiesRemainingInWave = totalEnemiesInCurrentWave;
+        enemiesSpawnedInCurrentWave = 0;
+        
+        // Start wave spawning coroutine
+        isSpawningWave = true;
+        waveStartTime = Time.time;
+        
+        // Notify wave start
+        OnWaveStart?.Invoke(currentWaveIndex + 1); // +1 for display (waves start at 1)
+        
+        if (showDebug)
+        {
+            Debug.Log($"Starting Wave {currentWaveIndex + 1} with {totalEnemiesInCurrentWave} enemies");
+        }
+        
+        // Start spawning
+        StartCoroutine(SpawnWaveCoroutine());
+    }
+    
+    /// <summary>
+    /// Coroutine to spawn a wave of enemies
+    /// </summary>
+    private IEnumerator SpawnWaveCoroutine()
+    {
+        // Wait for the wave start delay
+        yield return new WaitForSeconds(currentWave.initialDelay);
+        
+        // Spawn each group of enemies
+        foreach (var enemyGroup in currentWave.enemyGroups)
+        {
+            // Wait for group delay
+            yield return new WaitForSeconds(enemyGroup.delayBeforeGroup);
+            
+            // Spawn the enemies in the group
+            for (int i = 0; i < enemyGroup.count; i++)
+            {
+                SpawnEnemy(enemyGroup.enemyPrefab, enemyGroup.difficultyMultiplier);
+                enemiesSpawnedInCurrentWave++;
+                
+                // Wait between spawns
+                yield return new WaitForSeconds(enemyGroup.timeBetweenSpawns);
+            }
+        }
+        
+        // Set next wave time
+        nextWaveStartTime = Time.time + timeBetweenWaves;
+        
+        // Note: we don't set isSpawningWave to false here
+        // Wave is considered complete only when all enemies are defeated
+    }
+    
+    /// <summary>
+    /// Spawns a single enemy
+    /// </summary>
+    private void SpawnEnemy(GameObject enemyPrefab, float difficultyMultiplier)
+    {
+        if (enemyPrefab == null)
+        {
+            Debug.LogError("EnemySpawner: Enemy prefab is null!");
+            return;
+        }
+        
+        // Create the enemy at the spawn point
+        GameObject enemyObj = Instantiate(enemyPrefab, spawnPoint.position, Quaternion.identity);
+        enemyObj.transform.SetParent(transform);
+        
+        // Get and initialize enemy controller
+        EnemyController enemyController = enemyObj.GetComponent<EnemyController>();
+        
+        if (enemyController == null)
+        {
+            Debug.LogError("EnemySpawner: Enemy prefab doesn't have an EnemyController component!");
+            Destroy(enemyObj);
+            return;
+        }
+        
+        // Subscribe to enemy events
+        enemyController.OnEnemyDefeated += HandleEnemyDefeated;
+        enemyController.OnEnemyReachedEnd += HandleEnemyReachedEnd;
+        
+        // Apply difficulty multiplier (can be implemented to scale health/damage)
+        // This would require adding a method to EnemyController to apply difficulty scaling
+        
+        // Add to active enemies list
+        activeEnemies.Add(enemyController);
+    }
+    
+    /// <summary>
+    /// Handles an enemy being defeated
+    /// </summary>
+    private void HandleEnemyDefeated(EnemyController enemy)
+    {
+        // Remove from active enemies
+        activeEnemies.Remove(enemy);
+        enemiesRemainingInWave--;
+        
+        // Unsubscribe from events
+        enemy.OnEnemyDefeated -= HandleEnemyDefeated;
+        enemy.OnEnemyReachedEnd -= HandleEnemyReachedEnd;
+    }
+    
+    /// <summary>
+    /// Handles an enemy reaching the end
+    /// </summary>
+    private void HandleEnemyReachedEnd(EnemyController enemy)
+    {
+        // Remove from active enemies
+        activeEnemies.Remove(enemy);
+        enemiesRemainingInWave--;
+        
+        // Unsubscribe from events
+        enemy.OnEnemyDefeated -= HandleEnemyDefeated;
+        enemy.OnEnemyReachedEnd -= HandleEnemyReachedEnd;
+    }
+    
+    /// <summary>
+    /// Complete the current wave and prepare for the next
+    /// </summary>
+    private void CompleteWave()
+    {
+        if (!isSpawningWave)
+            return;
+        
+        isSpawningWave = false;
+        
+        // Calculate wave duration
+        float waveDuration = Time.time - waveStartTime;
+        
+        if (showDebug)
+        {
+            Debug.Log($"Wave {currentWaveIndex + 1} completed in {waveDuration:F2} seconds");
+        }
+        
+        // Notify listeners
+        OnWaveComplete?.Invoke(currentWaveIndex + 1);
+        
+        // Check if all waves are complete
+        if (currentWaveIndex >= waves.Count - 1)
+        {
+            OnAllWavesComplete?.Invoke(waves.Count);
+        }
+    }
+    
+    /// <summary>
+    /// Cleans up any null references in the active enemies list
+    /// </summary>
+    private void CleanupActiveEnemiesList()
+    {
+        activeEnemies.RemoveAll(enemy => enemy == null);
+    }
+    
+    /// <summary>
+    /// Gets the number of active enemies
+    /// </summary>
+    public int GetActiveEnemiesCount()
+    {
+        CleanupActiveEnemiesList();
+        return activeEnemies.Count;
+    }
+    
+    /// <summary>
+    /// Gets the total number of waves
+    /// </summary>
+    public int GetTotalWavesCount()
+    {
+        return waves.Count;
+    }
+    
+    /// <summary>
+    /// Gets the current wave index (0-based)
+    /// </summary>
+    public int GetCurrentWaveIndex()
+    {
+        return currentWaveIndex;
+    }
+    
+    /// <summary>
+    /// Gets the current wave number (1-based, for display)
+    /// </summary>
+    public int GetCurrentWaveNumber()
+    {
+        return currentWaveIndex + 1;
+    }
+    
+    /// <summary>
+    /// Gets the time until the next wave starts
+    /// </summary>
+    public float GetTimeUntilNextWave()
+    {
+        return Mathf.Max(0, nextWaveStartTime - Time.time);
+    }
+    
+    /// <summary>
+    /// Skips the countdown and immediately starts the next wave
+    /// </summary>
+    public void SkipCountdown()
+    {
+        if (!isSpawningWave && currentWaveIndex < waves.Count - 1)
+        {
+            nextWaveStartTime = Time.time;
+        }
+    }
+    
+    /// <summary>
+    /// Spawns a specific enemy type for testing
+    /// </summary>
+    public void SpawnEnemyForTesting(string enemyPrefabName)
+    {
+        // Find the prefab in any wave
+        foreach (var wave in waves)
+        {
+            foreach (var group in wave.enemyGroups)
+            {
+                if (group.enemyPrefab != null && group.enemyPrefab.name == enemyPrefabName)
+                {
+                    SpawnEnemy(group.enemyPrefab, 1.0f);
+                    return;
+                }
+            }
+        }
+        
+        Debug.LogWarning($"EnemySpawner: Could not find enemy prefab named {enemyPrefabName} for testing");
+    }
+}
+
+/// <summary>
+/// Data structure for a wave of enemies
+/// </summary>
+[System.Serializable]
+public class WaveData
+{
+    [Tooltip("Name of the wave (for display)")]
+    public string waveName = "Wave";
+    
+    [Tooltip("Initial delay before wave starts")]
+    public float initialDelay = 2f;
+    
+    [Tooltip("Groups of enemies to spawn in this wave")]
+    public List<EnemyGroupData> enemyGroups = new List<EnemyGroupData>();
+}
+
+/// <summary>
+/// Data structure for a group of the same enemy type within a wave
+/// </summary>
+[System.Serializable]
+public class EnemyGroupData
+{
+    [Tooltip("Enemy prefab to spawn")]
+    public GameObject enemyPrefab;
+    
+    [Tooltip("Number of enemies to spawn")]
+    public int count = 5;
+    
+    [Tooltip("Time between spawning each enemy")]
+    public float timeBetweenSpawns = 1f;
+    
+    [Tooltip("Delay before this group starts spawning")]
+    public float delayBeforeGroup = 0f;
+    
+    [Tooltip("Difficulty multiplier for this group (scales health/damage)")]
+    public float difficultyMultiplier = 1f;
+}
