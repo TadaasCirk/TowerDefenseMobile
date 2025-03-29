@@ -16,7 +16,11 @@ namespace TowerDefense.Core
         [SerializeField] private int _targetFrameRate = 60;
         [SerializeField] private bool _multiTouchEnabled = true;
         
-        // Service references can be added here as needed
+        [Header("Service Locator")]
+        [SerializeField] private bool _enableServiceLocatorLogging = false;
+        
+        // Services collection
+        private bool _servicesInitialized = false;
         
         /// <summary>
         /// Initialization method called when the singleton instance is created
@@ -26,6 +30,32 @@ namespace TowerDefense.Core
         {
             // Configure application settings
             ApplyApplicationSettings();
+            
+            // Configure service locator
+            ServiceLocator.SetLogging(_enableServiceLocatorLogging);
+            
+            // Register as a service first (already done by SingletonBehaviour, but being explicit)
+            ServiceLocator.Register<AppManager>(this, true);
+            
+            // Initialize all required services
+            InitializeServices();
+        }
+        
+        /// <summary>
+        /// Initialize all core services needed by the application
+        /// </summary>
+        private void InitializeServices()
+        {
+            if (_servicesInitialized)
+                return;
+            
+            // Log service initialization
+            Debug.Log("AppManager: Initializing core services...");
+            
+            // Note: Services will register themselves with the ServiceLocator
+            // This is just a convenient place to log/track service initialization
+            
+            _servicesInitialized = true;
         }
         
         private void ApplyApplicationSettings()
@@ -77,6 +107,32 @@ namespace TowerDefense.Core
             #if UNITY_EDITOR
             UnityEditor.EditorApplication.isPlaying = false;
             #endif
+        }
+        
+        /// <summary>
+        /// OnDestroy is called when the behavior is destroyed
+        /// </summary>
+        protected override void OnDestroy()
+        {
+            // Clean up any resources
+            
+            // Call base implementation to unregister from ServiceLocator
+            base.OnDestroy();
+        }
+        
+        /// <summary>
+        /// OnApplicationQuit is called when the application quits
+        /// </summary>
+        protected override void OnApplicationQuit()
+        {
+            // Perform any application shutdown logic
+            Debug.Log("AppManager: Application shutting down...");
+            
+            // Clear all services when the application quits
+            ServiceLocator.Clear();
+            
+            // Call base implementation
+            base.OnApplicationQuit();
         }
     }
 }

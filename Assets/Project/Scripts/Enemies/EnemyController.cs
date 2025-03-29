@@ -1,6 +1,6 @@
 using System;
 using UnityEngine;
-using TowerDefense.Core; // Add this using directive to access the GameManager
+using TowerDefense.Core;
 
 /// <summary>
 /// Controls the core functionality of an enemy in the tower defense game.
@@ -206,24 +206,16 @@ public class EnemyController : MonoBehaviour
             // Enemy reached end - notify listeners
             OnEnemyReachedEnd?.Invoke(this);
             
-            // Find game manager and notify
-            GameManager gameManager = GameManager.Instance;
-            if (gameManager != null)
-            {
-                gameManager.PlayerTakeDamage(damageToPlayer);
-            }
+            // Notify the game through the event system
+            GameEvents.EnemyReachedEnd(damageToPlayer);
         }
         else
         {
             // Enemy defeated - notify listeners
             OnEnemyDefeated?.Invoke(this);
             
-            // Find game manager and reward player
-            GameManager gameManager = GameManager.Instance;
-            if (gameManager != null)
-            {
-                gameManager.EnemyDefeated(goldReward, experienceReward);
-            }
+            // Notify the game through the event system
+            GameEvents.EnemyDefeated(goldReward, experienceReward);
             
             // Spawn death effect if available
             if (deathEffectPrefab != null)
@@ -280,6 +272,16 @@ public class EnemyController : MonoBehaviour
     public int GetExperienceReward()
     {
         return experienceReward;
+    }
+    
+    /// <summary>
+    /// Clean up when destroyed
+    /// </summary>
+    private void OnDestroy()
+    {
+        // Clean up event subscriptions to prevent memory leaks
+        OnEnemyDefeated = null;
+        OnEnemyReachedEnd = null;
     }
 }
 

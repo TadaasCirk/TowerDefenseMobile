@@ -5,6 +5,7 @@ namespace TowerDefense.Core
     /// <summary>
     /// Generic singleton base class for MonoBehaviours.
     /// Ensures only one instance exists and provides global access.
+    /// Also integrates with ServiceLocator for improved architecture.
     /// </summary>
     /// <typeparam name="T">The type of the singleton class</typeparam>
     public abstract class SingletonBehaviour<T> : MonoBehaviour where T : SingletonBehaviour<T>
@@ -21,7 +22,20 @@ namespace TowerDefense.Core
         private static bool _isQuitting = false;
 
         /// <summary>
+        /// Flag to determine whether this singleton should auto-register with the ServiceLocator
+        /// </summary>
+        [Tooltip("Should this singleton automatically register with the ServiceLocator?")]
+        [SerializeField] protected bool autoRegisterWithServiceLocator = true;
+
+        /// <summary>
+        /// Flag to determine whether this singleton should persist between scenes
+        /// </summary>
+        [Tooltip("Should this singleton persist between scenes? (DontDestroyOnLoad)")]
+        [SerializeField] protected bool persistBetweenScenes = true;
+
+        /// <summary>
         /// Global access point to the singleton instance
+        /// Note: Consider using ServiceLocator.Get<T>() instead for better decoupling
         /// </summary>
         public static T Instance
         {
@@ -67,15 +81,24 @@ namespace TowerDefense.Core
                 // This is the first instance - make it the singleton
                 _instance = (T)this;
                 
-                // If this object is a child, we need to make it a root object for DontDestroyOnLoad to work
-                if (transform.parent != null)
+                // If this object should persist between scenes, mark it as DontDestroyOnLoad
+                if (persistBetweenScenes)
                 {
-                    Debug.Log($"[Singleton] Detaching {typeof(T).Name} from parent for DontDestroyOnLoad");
-                    transform.SetParent(null, true);
+                    // If this object is a child, we need to make it a root object for DontDestroyOnLoad to work
+                    if (transform.parent != null)
+                    {
+                        Debug.Log($"[Singleton] Detaching {typeof(T).Name} from parent for DontDestroyOnLoad");
+                        transform.SetParent(null, true);
+                    }
+                    
+                    DontDestroyOnLoad(gameObject);
                 }
                 
-                // Keep the singleton object alive across scene changes
-                DontDestroyOnLoad(gameObject);
+                // Register with service locator if configured to do so
+                if (autoRegisterWithServiceLocator)
+                {
+                    RegisterWithServiceLocator();
+                }
                 
                 // Call the initialization method
                 OnSingletonAwake();
@@ -100,6 +123,47 @@ namespace TowerDefense.Core
         protected virtual void OnApplicationQuit()
         {
             _isQuitting = true;
+            
+            // Unregister from service locator when quitting
+            if (autoRegisterWithServiceLocator)
+            {
+                UnregisterFromServiceLocator();
+            }
+        }
+        
+        /// <summary>
+        /// Clean up when the object is destroyed
+        /// </summary>
+        protected virtual void OnDestroy()
+        {
+            // If this is the singleton instance being destroyed
+            if (_instance == this)
+            {
+                // Unregister from service locator
+                if (autoRegisterWithServiceLocator)
+                {
+                    UnregisterFromServiceLocator();
+                }
+                
+                // Clear the static instance reference
+                _instance = null;
+            }
+        }
+        
+        /// <summary>
+        /// Registers this singleton with the ServiceLocator
+        /// </summary>
+        protected virtual void RegisterWithServiceLocator()
+        {
+            ServiceLocator.Register<T>((T)this);
+        }
+        
+        /// <summary>
+        /// Unregisters this singleton from the ServiceLocator
+        /// </summary>
+        protected virtual void UnregisterFromServiceLocator()
+        {
+            ServiceLocator.Unregister<T>();
         }
         
         /// <summary>

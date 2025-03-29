@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using TowerDefense.Core;
 
 /// <summary>
 /// Manages the grid system for tower placement and pathfinding in the tower defense game.
@@ -17,6 +18,7 @@ public class GridManager : MonoBehaviour
     [Tooltip("Size of each grid cell in world units")]
     [SerializeField] private float cellSize = 1f;
     
+    [Header("Visualization")]
     [Tooltip("Visual representation of a grid cell")]
     [SerializeField] private GameObject cellPrefab;
     
@@ -31,6 +33,10 @@ public class GridManager : MonoBehaviour
     
     [Tooltip("Material for path visualization")]
     [SerializeField] private Material pathMaterial;
+    
+    [Header("Dependencies")]
+    [Tooltip("Reference to the pathfinding manager")]
+    [SerializeField] private PathfindingManager pathfindingManager;
     
     [Header("Optimization")]
     [Tooltip("Should cell visualizers be pooled?")]
@@ -47,9 +53,6 @@ public class GridManager : MonoBehaviour
     
     // Object pool for cell visualizers
     private Queue<GameObject> cellVisualizerPool = new Queue<GameObject>();
-    
-    // Reference to PathfindingManager (to be implemented)
-    private PathfindingManager pathfindingManager;
     
     // Currently highlighted cell
     private Vector2Int? highlightedCell = null;
@@ -82,16 +85,48 @@ public class GridManager : MonoBehaviour
         // Initialize the grid
         InitializeGrid();
         
-        // Try to find the pathfinding manager in the scene
-        pathfindingManager = FindObjectOfType<PathfindingManager>();
+        // Register with ServiceLocator
+        ServiceLocator.Register<GridManager>(this);
     }
 
     private void Start()
     {
+        // Find dependencies if not assigned in Inspector
+        ResolveDependencies();
+        
         // Create cell visualizers but don't show them initially
         Debug.Log($"Grid dimensions: {gridWidth}x{gridHeight}");
         CreateCellVisualizers();
         SetGridVisibility(false);
+    }
+    
+    private void OnDestroy()
+    {
+        // Unregister from ServiceLocator
+        ServiceLocator.Unregister<GridManager>();
+    }
+    
+    /// <summary>
+    /// Find any required dependencies not assigned in Inspector
+    /// </summary>
+    private void ResolveDependencies()
+    {
+        if (pathfindingManager == null)
+        {
+            // Try to get from ServiceLocator first
+            pathfindingManager = ServiceLocator.Get<PathfindingManager>(true);
+            
+            // Fallback to FindObjectOfType if not in ServiceLocator
+            if (pathfindingManager == null)
+            {
+                pathfindingManager = FindObjectOfType<PathfindingManager>();
+                
+                if (pathfindingManager == null)
+                {
+                    Debug.LogWarning("GridManager: Could not find PathfindingManager. Pathfinding validation will be disabled.");
+                }
+            }
+        }
     }
 
     /// <summary>

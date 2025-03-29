@@ -1,7 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using TowerDefense.Core; // Add namespace for GameManager access
+using TowerDefense.Core;
 
 /// <summary>
 /// Controls enemy movement along a path in the tower defense game.
@@ -74,22 +74,47 @@ public class EnemyMovement : MonoBehaviour
     
     private void Awake()
     {
-        // Find managers if they exist in the scene
-        gridManager = FindObjectOfType<GridManager>();
-        
-        if (gridManager == null)
-        {
-            Debug.LogError("EnemyMovement: Could not find GridManager!");
-        }
+        // We'll resolve dependencies in Start to ensure ServiceLocator is populated
     }
     
     private void Start()
     {
+        // Find required dependencies using ServiceLocator
+        ResolveDependencies();
+        
         // Add debug logging to track initialization
         Debug.Log($"EnemyMovement Start - Initializing path for {gameObject.name}");
         
         // Delay path initialization to ensure PathfindingManager is ready
         StartCoroutine(InitializePathWithDelay());
+    }
+    
+    /// <summary>
+    /// Resolves dependencies using ServiceLocator with fallbacks
+    /// </summary>
+    private void ResolveDependencies()
+    {
+        // Try to get GridManager from ServiceLocator
+        gridManager = ServiceLocator.Get<GridManager>(true);
+        if (gridManager == null)
+        {
+            gridManager = FindObjectOfType<GridManager>();
+            if (gridManager == null)
+            {
+                Debug.LogError("EnemyMovement: Could not find GridManager!");
+            }
+        }
+        
+        // Try to get PathfindingManager from ServiceLocator
+        pathfindingManager = ServiceLocator.Get<PathfindingManager>(true);
+        if (pathfindingManager == null)
+        {
+            pathfindingManager = FindObjectOfType<PathfindingManager>();
+            if (pathfindingManager == null)
+            {
+                Debug.LogWarning("EnemyMovement: Could not find PathfindingManager!");
+            }
+        }
     }
     
     /// <summary>
@@ -135,14 +160,10 @@ public class EnemyMovement : MonoBehaviour
     private bool TryInitializePath()
     {
         // Verify we have the required references
-        if (pathfindingManager == null)
+        if (pathfindingManager == null || gridManager == null)
         {
-            pathfindingManager = FindObjectOfType<PathfindingManager>();
-            if (pathfindingManager == null)
-            {
-                Debug.LogWarning("EnemyMovement: Could not find PathfindingManager!");
-                return false;
-            }
+            Debug.LogWarning("EnemyMovement: Missing required managers for path initialization!");
+            return false;
         }
         
         // Check if the pathfinding manager has calculated a path yet
@@ -326,21 +347,23 @@ public class EnemyMovement : MonoBehaviour
     {
         pathComplete = true;
         
-        // Notify the game manager that an enemy reached the end
-        GameManager gameManager = GameManager.Instance;
-        if (gameManager != null)
-        {
-            gameManager.EnemyReachedEnd(gameObject);
-        }
-        
         // Spawn effect if available
         if (reachEndEffectPrefab != null)
         {
             Instantiate(reachEndEffectPrefab, transform.position, Quaternion.identity);
         }
         
-        // Destroy the enemy object
-        Destroy(gameObject, 0.1f);
+        // Get the EnemyController to handle end-of-path logic
+        EnemyController controller = GetComponent<EnemyController>();
+        if (controller != null)
+        {
+            controller.ReachedEnd();
+        }
+        else
+        {
+            // If no controller exists, just destroy the object
+            Destroy(gameObject, 0.1f);
+        }
     }
     
     /// <summary>

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using System.Linq;
+using TowerDefense.Core;
 
 /// <summary>
 /// Manages pathfinding for the tower defense game using A* algorithm.
@@ -88,22 +89,18 @@ public class PathfindingManager : MonoBehaviour
                 new Vector2Int(-1, 0)   // Left
             };
         }
+        
+        // Register with ServiceLocator
+        ServiceLocator.Register<PathfindingManager>(this);
     }
 
     private void Start()
     {
-        // Find GridManager if not assigned
-        if (gridManager == null)
-            gridManager = FindObjectOfType<GridManager>();
-
-        if (gridManager == null)
-        {
-            Debug.LogError("PathfindingManager: No GridManager found in the scene!");
-            return;
-        }
+        // Find dependencies if not assigned in Inspector
+        ResolveDependencies();
 
         // Calculate initial grid positions for entry and exit
-        if (entryPoint != null && exitPoint != null)
+        if (entryPoint != null && exitPoint != null && gridManager != null)
         {
             startGridPos = gridManager.GetGridPosition(entryPoint.position);
             endGridPos = gridManager.GetGridPosition(exitPoint.position);
@@ -112,7 +109,7 @@ public class PathfindingManager : MonoBehaviour
         }
         else
         {
-            Debug.LogError("PathfindingManager: Entry or exit point not assigned!");
+            Debug.LogError("PathfindingManager: Missing required references for initialization!");
             return;
         }
 
@@ -122,6 +119,35 @@ public class PathfindingManager : MonoBehaviour
         // Mark as initialized after initial calculation
         isInitialized = true;
         Debug.Log("PathfindingManager: Initialization complete");
+    }
+    
+    private void OnDestroy()
+    {
+        // Unregister from ServiceLocator
+        ServiceLocator.Unregister<PathfindingManager>();
+    }
+    
+    /// <summary>
+    /// Find any required dependencies not assigned in Inspector
+    /// </summary>
+    private void ResolveDependencies()
+    {
+        if (gridManager == null)
+        {
+            // Try to get from ServiceLocator first
+            gridManager = ServiceLocator.Get<GridManager>(true);
+            
+            // Fallback to FindObjectOfType only if necessary
+            if (gridManager == null)
+            {
+                gridManager = FindObjectOfType<GridManager>();
+                
+                if (gridManager == null)
+                {
+                    Debug.LogError("PathfindingManager: Could not find GridManager! Pathfinding will not function.");
+                }
+            }
+        }
     }
     
     /// <summary>
@@ -161,7 +187,7 @@ public class PathfindingManager : MonoBehaviour
         }
 
         // Visualize the path if requested
-        if (visualizePath && currentPath != null && currentPath.Count > 0)
+        if (visualizePath && currentPath != null && currentPath.Count > 0 && gridManager != null)
         {
             gridManager.VisualizePath(currentPath);
         }
@@ -269,15 +295,19 @@ public class PathfindingManager : MonoBehaviour
     private Dictionary<Vector2Int, PathNode> InitializePathfindingGrid()
     {
         Dictionary<Vector2Int, PathNode> grid = new Dictionary<Vector2Int, PathNode>();
-        Vector2Int dimensions = gridManager.GetGridDimensions();
-
-        for (int x = 0; x < dimensions.x; x++)
+        
+        if (gridManager != null)
         {
-            for (int y = 0; y < dimensions.y; y++)
+            Vector2Int dimensions = gridManager.GetGridDimensions();
+
+            for (int x = 0; x < dimensions.x; x++)
             {
-                Vector2Int position = new Vector2Int(x, y);
-                bool isWalkable = IsPositionWalkable(position);
-                grid[position] = new PathNode(position, isWalkable);
+                for (int y = 0; y < dimensions.y; y++)
+                {
+                    Vector2Int position = new Vector2Int(x, y);
+                    bool isWalkable = IsPositionWalkable(position);
+                    grid[position] = new PathNode(position, isWalkable);
+                }
             }
         }
 
@@ -344,7 +374,7 @@ public class PathfindingManager : MonoBehaviour
     /// </summary>
     private bool IsPositionValid(Vector2Int position)
     {
-        return gridManager.IsWithinGrid(position);
+        return gridManager != null && gridManager.IsWithinGrid(position);
     }
 
     /// <summary>
@@ -352,6 +382,9 @@ public class PathfindingManager : MonoBehaviour
     /// </summary>
     private bool IsPositionWalkable(Vector2Int position)
     {
+        if (gridManager == null)
+            return false;
+            
         GridManager.GridCell cell = gridManager.GetCell(position);
         return cell != null && cell.IsWalkable;
     }
