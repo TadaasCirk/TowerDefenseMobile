@@ -89,6 +89,7 @@ public class GridManager : MonoBehaviour
     private void Start()
     {
         // Create cell visualizers but don't show them initially
+        Debug.Log($"Grid dimensions: {gridWidth}x{gridHeight}");
         CreateCellVisualizers();
         SetGridVisibility(false);
     }

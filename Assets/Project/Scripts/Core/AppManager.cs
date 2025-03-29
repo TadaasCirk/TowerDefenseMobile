@@ -7,11 +7,8 @@ namespace TowerDefense.Core
     /// Core application manager that persists throughout the game
     /// Acts as a service locator and manages application lifecycle
     /// </summary>
-    public class AppManager : MonoBehaviour
+    public class AppManager : SingletonBehaviour<AppManager>
     {
-        // Singleton instance
-        public static AppManager Instance { get; private set; }
-        
         [Header("Debug Settings")]
         [SerializeField] private bool _showDebugInfo = true;
         
@@ -21,18 +18,12 @@ namespace TowerDefense.Core
         
         // Service references can be added here as needed
         
-        private void Awake()
+        /// <summary>
+        /// Initialization method called when the singleton instance is created
+        /// Called by SingletonBehaviour<T> during Awake
+        /// </summary>
+        protected override void OnSingletonAwake()
         {
-            // Singleton pattern implementation
-            if (Instance != null && Instance != this)
-            {
-                Destroy(gameObject);
-                return;
-            }
-            
-            Instance = this;
-            DontDestroyOnLoad(gameObject);
-            
             // Configure application settings
             ApplyApplicationSettings();
         }

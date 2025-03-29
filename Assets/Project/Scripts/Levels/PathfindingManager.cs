@@ -38,6 +38,9 @@ public class PathfindingManager : MonoBehaviour
     // Direction vectors for pathfinding
     private Vector2Int[] directions;
 
+    // Track initialization state
+    private bool isInitialized = false;
+
     // A node in the pathfinding grid
     private class PathNode
     {
@@ -99,8 +102,34 @@ public class PathfindingManager : MonoBehaviour
             return;
         }
 
+        // Calculate initial grid positions for entry and exit
+        if (entryPoint != null && exitPoint != null)
+        {
+            startGridPos = gridManager.GetGridPosition(entryPoint.position);
+            endGridPos = gridManager.GetGridPosition(exitPoint.position);
+            
+            Debug.Log($"PathfindingManager: Entry point at grid position {startGridPos}, exit at {endGridPos}");
+        }
+        else
+        {
+            Debug.LogError("PathfindingManager: Entry or exit point not assigned!");
+            return;
+        }
+
         // Initial path calculation
         RecalculatePath();
+        
+        // Mark as initialized after initial calculation
+        isInitialized = true;
+        Debug.Log("PathfindingManager: Initialization complete");
+    }
+    
+    /// <summary>
+    /// Checks if the pathfinding system is initialized and has a valid path
+    /// </summary>
+    public bool IsPathCalculated()
+    {
+        return isInitialized && currentPath != null && currentPath.Count > 0;
     }
 
     /// <summary>
@@ -114,18 +143,27 @@ public class PathfindingManager : MonoBehaviour
             return;
         }
 
-        // Calculate grid positions for entry and exit
+        // Calculate grid positions for entry and exit (in case they moved)
         startGridPos = gridManager.GetGridPosition(entryPoint.position);
         endGridPos = gridManager.GetGridPosition(exitPoint.position);
 
         // Find the path using A*
-        currentPath = FindPath(startGridPos, endGridPos);
+        List<Vector2Int> newPath = FindPath(startGridPos, endGridPos);
+        
+        if (newPath != null && newPath.Count > 0)
+        {
+            currentPath = newPath;
+            Debug.Log($"PathfindingManager: Path recalculated with {currentPath.Count} nodes from {startGridPos} to {endGridPos}");
+        }
+        else
+        {
+            Debug.LogWarning("PathfindingManager: Failed to calculate a valid path!");
+        }
 
         // Visualize the path if requested
-        if (visualizePath && currentPath != null)
+        if (visualizePath && currentPath != null && currentPath.Count > 0)
         {
             gridManager.VisualizePath(currentPath);
-            Debug.Log($"Path recalculated: {currentPath.Count} steps from {startGridPos} to {endGridPos}");
         }
     }
 
@@ -426,7 +464,15 @@ public class PathfindingManager : MonoBehaviour
     /// </summary>
     public List<Vector2Int> GetCurrentPath()
     {
-        return new List<Vector2Int>(currentPath);
+        if (currentPath == null || currentPath.Count == 0)
+        {
+            Debug.LogWarning("PathfindingManager: Path requested but not yet calculated!");
+            // Force path calculation if not done yet
+            RecalculatePath();
+        }
+        
+        // Return a defensive copy of the path to prevent external modification
+        return new List<Vector2Int>(currentPath ?? new List<Vector2Int>());
     }
 
     /// <summary>
