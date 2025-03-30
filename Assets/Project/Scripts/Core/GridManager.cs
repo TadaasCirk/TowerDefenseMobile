@@ -63,6 +63,8 @@ public class GridManager : MonoBehaviour
     // Flag to show/hide the grid
     private bool isGridVisible = false;
 
+    private float pathHeight; 
+
     /// <summary>
     /// Information about a cell in the grid
     /// </summary>
@@ -239,15 +241,21 @@ public class GridManager : MonoBehaviour
         SetGridVisibility(!isGridVisible);
     }
 
-    /// <summary>
-    /// Converts a grid position to a world position
-    /// </summary>
-    public Vector3 GetWorldPosition(Vector2Int gridPosition)
+    public void SetPathHeight(float height)
     {
+        pathHeight = height;
+        Debug.Log($"Path height set to {pathHeight}");
+    }
+
+    public Vector3 GetWorldPosition(Vector2Int gridPosition, float heightOverride = float.MinValue)
+    {
+        // If a specific height is provided, use it, otherwise use the stored path height
+        float yValue = (heightOverride != float.MinValue) ? heightOverride : pathHeight;
+    
         return new Vector3(
-            gridPosition.x * cellSize + cellSize / 2f, 
-            0.05f, // Slight elevation to avoid z-fighting
-            gridPosition.y * cellSize + cellSize / 2f
+            gridPosition.x * cellSize + (cellSize / 2),
+            yValue,
+            gridPosition.y * cellSize + (cellSize / 2)
         );
     }
 

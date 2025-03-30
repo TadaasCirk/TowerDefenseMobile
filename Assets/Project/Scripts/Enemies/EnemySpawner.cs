@@ -10,14 +10,9 @@ using TowerDefense.Core;
 public class EnemySpawner : MonoBehaviour
 {
     [Header("Spawn Settings")]
-    [Tooltip("Transform where enemies will spawn")]
-    [SerializeField] private Transform spawnPoint;
-    
-    [Tooltip("Should enemies be spawned at the path entry point?")]
-    [SerializeField] private bool usePathEntryPoint = true;
-    
-    [Tooltip("Reference to the pathfinding manager")]
+    [SerializeField] private Transform spawnPoint; // Can be null if using pathfinding entry
     [SerializeField] private PathfindingManager pathfindingManager;
+    [SerializeField] private bool usePathEntryPoint = true;
     
     [Header("Wave Settings")]
     [Tooltip("List of waves to spawn")]
@@ -36,6 +31,26 @@ public class EnemySpawner : MonoBehaviour
     [Tooltip("Show debug information")]
     [SerializeField] private bool showDebug = true;
     
+    // In your EnemySpawner script
+    [System.Serializable]
+    public class WaveData
+    {
+        public string waveName = "Wave";
+        public float initialDelay = 2f;
+        public List<EnemyGroupData> enemyGroups = new List<EnemyGroupData>();
+    }
+
+    [System.Serializable]
+    public class EnemyGroupData
+    {
+        public GameObject enemyPrefab;
+        public int count = 5;
+        public float timeBetweenSpawns = 0.5f;
+        public float delayBeforeGroup = 0f;
+        public float difficultyMultiplier = 1f;
+    }
+
+
     // Dependencies
     private GridManager gridManager;
     private GameManager gameManager;
@@ -68,11 +83,21 @@ public class EnemySpawner : MonoBehaviour
     
     private void Start()
     {
-        // Find dependencies using ServiceLocator
-        ResolveDependencies();
-        
-        // Set up spawn point
-        SetupSpawnPoint();
+
+        if (pathfindingManager == null)
+            pathfindingManager = FindObjectOfType<PathfindingManager>();
+            
+        // Set up spawn location based on entry point
+        if (usePathEntryPoint && pathfindingManager != null && pathfindingManager.entryPoint != null)
+        {
+            spawnPoint = pathfindingManager.entryPoint;
+            Debug.Log($"Using PathfindingManager's EntryPoint as spawn location: {spawnPoint.position}");
+        }
+        else if (spawnPoint == null)
+        {
+            spawnPoint = transform;
+            Debug.LogWarning("No spawn point specified, using EnemySpawner position.");
+        }
         
         // Initialize next wave time
         if (autoStartWaves)
@@ -301,11 +326,11 @@ public class EnemySpawner : MonoBehaviour
             Debug.LogError("EnemySpawner: Enemy prefab is null!");
             return;
         }
-        
-        // Create the enemy at the spawn point
-        GameObject enemyObj = Instantiate(enemyPrefab, spawnPoint.position, Quaternion.identity);
+        Vector3 spawnPosition = spawnPoint.position;
+        GameObject enemyObj = Instantiate(enemyPrefab, spawnPosition, Quaternion.identity);
         enemyObj.transform.SetParent(transform);
         
+        Debug.Log($"Enemy spawned at position: {spawnPosition}");
         // Get and initialize enemy controller
         EnemyController enemyController = enemyObj.GetComponent<EnemyController>();
         
@@ -315,7 +340,8 @@ public class EnemySpawner : MonoBehaviour
             Destroy(enemyObj);
             return;
         }
-        
+         Debug.Log("EnemySpawner: got enemyController");
+
         // Subscribe to enemy events
         enemyController.OnEnemyDefeated += HandleEnemyDefeated;
         enemyController.OnEnemyReachedEnd += HandleEnemyReachedEnd;
