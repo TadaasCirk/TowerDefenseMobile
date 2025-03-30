@@ -14,7 +14,7 @@ public class PathfindingManager : MonoBehaviour
     [SerializeField] private GridManager gridManager;
 
     [Tooltip("The entry point for enemies")]
-    [SerializeField] private Transform entryPoint;
+    [SerializeField] public Transform entryPoint;
 
     [Tooltip("The exit point for enemies")]
     [SerializeField] private Transform exitPoint;
@@ -94,28 +94,41 @@ public class PathfindingManager : MonoBehaviour
         ServiceLocator.Register<PathfindingManager>(this);
     }
 
+    // In PathfindingManager.cs - add more detailed logging to Start method
     private void Start()
     {
+        Debug.Log("PathfindingManager Start - Beginning initialization");
+    
         // Find dependencies if not assigned in Inspector
         ResolveDependencies();
-
+    
         // Calculate initial grid positions for entry and exit
         if (entryPoint != null && exitPoint != null && gridManager != null)
         {
             startGridPos = gridManager.GetGridPosition(entryPoint.position);
             endGridPos = gridManager.GetGridPosition(exitPoint.position);
-            
-            Debug.Log($"PathfindingManager: Entry point at grid position {startGridPos}, exit at {endGridPos}");
+
+            Debug.Log($"Entry point world: {entryPoint.position}, grid: {startGridPos}, back to world: {gridManager.GetWorldPosition(startGridPos)}");
+            Debug.Log($"Exit point world: {exitPoint.position}, grid: {endGridPos}, back to world: {gridManager.GetWorldPosition(endGridPos)}");
         }
         else
         {
             Debug.LogError("PathfindingManager: Missing required references for initialization!");
+            if (entryPoint == null) Debug.LogError("- EntryPoint is null");
+            if (exitPoint == null) Debug.LogError("- ExitPoint is null");
+            if (gridManager == null) Debug.LogError("- GridManager is null");
             return;
         }
 
         // Initial path calculation
         RecalculatePath();
-        
+    
+        if (gridManager != null && entryPoint != null)
+        {
+            gridManager.SetPathHeight(entryPoint.position.y);
+        }   
+
+
         // Mark as initialized after initial calculation
         isInitialized = true;
         Debug.Log("PathfindingManager: Initialization complete");
@@ -163,6 +176,8 @@ public class PathfindingManager : MonoBehaviour
     /// </summary>
     public void RecalculatePath()
     {
+        Debug.Log("PathfindingManager: Recalculating");
+
         if (gridManager == null || entryPoint == null || exitPoint == null)
         {
             Debug.LogWarning("PathfindingManager: Missing references for path calculation!");
@@ -537,33 +552,32 @@ public class PathfindingManager : MonoBehaviour
     /// <summary>
     /// Draw lines showing the path in the Scene view for debugging
     /// </summary>
+    // In PathfindingManager.OnDrawGizmos()
     private void OnDrawGizmos()
     {
-        // Only draw if we have a valid path and grid manager
-        if (currentPath == null || currentPath.Count < 2 || gridManager == null)
+        if (!visualizePath || currentPath == null || currentPath.Count < 2 || gridManager == null)
             return;
 
         Gizmos.color = Color.yellow;
-
+    
+        // Get the height from entry point
+        float pathHeight = (entryPoint != null) ? entryPoint.position.y : 0.5f;
+    
         // Draw lines between path points
         for (int i = 0; i < currentPath.Count - 1; i++)
         {
-            Vector3 startPos = gridManager.GetWorldPosition(currentPath[i]);
-            Vector3 endPos = gridManager.GetWorldPosition(currentPath[i + 1]);
-            
-            // Raise the line slightly above the grid for visibility
-            startPos.y += 0.1f;
-            endPos.y += 0.1f;
-            
+            Vector3 startPos = gridManager.GetWorldPosition(currentPath[i], pathHeight);
+            Vector3 endPos = gridManager.GetWorldPosition(currentPath[i + 1], pathHeight);
+        
             Gizmos.DrawLine(startPos, endPos);
         }
-
+    
         // Draw entry and exit points
         if (entryPoint != null && exitPoint != null)
         {
             Gizmos.color = Color.green;
             Gizmos.DrawSphere(entryPoint.position, 0.3f);
-            
+        
             Gizmos.color = Color.red;
             Gizmos.DrawSphere(exitPoint.position, 0.3f);
         }

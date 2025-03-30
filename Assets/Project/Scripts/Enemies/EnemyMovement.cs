@@ -21,10 +21,6 @@ public class EnemyMovement : MonoBehaviour
     [Tooltip("How quickly the enemy rotates to face movement direction")]
     [SerializeField] private float rotationSpeed = 10f;
     
-    [Header("Path Settings")]
-    [Tooltip("Y position offset from the path (height above the grid)")]
-    [SerializeField] private float heightOffset = 0.5f;
-    
     [Tooltip("Maximum path initialization attempts")]
     [SerializeField] private int maxInitAttempts = 3;
     
@@ -79,13 +75,22 @@ public class EnemyMovement : MonoBehaviour
     
     private void Start()
     {
-        // Find required dependencies using ServiceLocator
-        ResolveDependencies();
+        Debug.Log($"Enemy {gameObject.name} initializing at position: {transform.position}");
         
-        // Add debug logging to track initialization
-        Debug.Log($"EnemyMovement Start - Initializing path for {gameObject.name}");
-        
-        // Delay path initialization to ensure PathfindingManager is ready
+        GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        marker.transform.parent = this.transform;
+        marker.transform.localPosition = Vector3.zero;
+        marker.transform.localScale = new Vector3(1, 1, 1);
+        marker.GetComponent<Renderer>().material.color = Color.magenta;
+
+
+        // Find required dependencies
+        if (pathfindingManager == null)
+            pathfindingManager = FindObjectOfType<PathfindingManager>();
+        if (gridManager == null)
+            gridManager = FindObjectOfType<GridManager>();
+            
+        // Initialize path but don't override starting position
         StartCoroutine(InitializePathWithDelay());
     }
     
@@ -122,34 +127,46 @@ public class EnemyMovement : MonoBehaviour
     /// </summary>
     private IEnumerator InitializePathWithDelay()
     {
-        // Small initial delay to allow other systems to initialize
-        yield return new WaitForSeconds(0.1f);
+        yield return new WaitForSeconds(0.1f); // Small delay to ensure other systems are ready
         
-        // Try to initialize the path, with multiple attempts if needed
-        while (!isPathInitialized && initAttempts < maxInitAttempts)
+        if (TryInitializePath())
         {
-            initAttempts++;
+            isPathInitialized = true;
+            Debug.Log($"Path initialized for {gameObject.name} with {worldWaypoints.Count} waypoints");
             
-            // If we successfully initialize the path, break out of the loop
-            if (TryInitializePath())
+            // Important: Find the closest waypoint to start from rather than teleporting
+            if (worldWaypoints != null && worldWaypoints.Count > 1)
             {
-                isPathInitialized = true;
-                Debug.Log($"EnemyMovement: Path successfully initialized for {gameObject.name} on attempt {initAttempts}");
-                break;
+                // Find the closest waypoint to start from
+                float closestDistance = float.MaxValue;
+                int closestIndex = 0;
+                
+                for (int i = 0; i < worldWaypoints.Count; i++)
+                {
+                    float distance = Vector3.Distance(transform.position, worldWaypoints[i]);
+                    if (distance < closestDistance)
+                    {
+                        closestDistance = distance;
+                        closestIndex = i;
+                    }
+                }
+                
+                // If we're very close to the first waypoint, start from the next one
+                if (closestIndex == 0 && closestDistance < 0.5f && worldWaypoints.Count > 1)
+                {
+                    currentWaypointIndex = 1;
+                }
+                else
+                {
+                    currentWaypointIndex = closestIndex;
+                }
+                
+                Debug.Log($"Starting from waypoint index: {currentWaypointIndex}");
             }
-            
-            // If we've reached the maximum number of attempts, create a default path
-            if (initAttempts >= maxInitAttempts)
-            {
-                Debug.LogWarning($"EnemyMovement: Max path initialization attempts reached for {gameObject.name}. Creating default path.");
-                CreateDefaultPath();
-                isPathInitialized = true;
-                break;
-            }
-            
-            // Wait before trying again
-            Debug.Log($"EnemyMovement: Path initialization attempt {initAttempts} failed. Retrying in {initRetryDelay} seconds.");
-            yield return new WaitForSeconds(initRetryDelay);
+        }
+        else
+        {
+            Debug.LogError($"Failed to initialize path for {gameObject.name}");
         }
     }
     
@@ -159,54 +176,34 @@ public class EnemyMovement : MonoBehaviour
     /// <returns>True if successful, false otherwise</returns>
     private bool TryInitializePath()
     {
-        // Verify we have the required references
         if (pathfindingManager == null || gridManager == null)
         {
-            Debug.LogWarning("EnemyMovement: Missing required managers for path initialization!");
+            Debug.LogError("Missing required managers for path initialization!");
             return false;
         }
-        
-        // Check if the pathfinding manager has calculated a path yet
-        if (!pathfindingManager.IsPathCalculated())
+    
+        // Get the path from the pathfinding manager - this line needs correcting
+        List<Vector2Int> pathPoints = pathfindingManager.GetCurrentPath();
+    
+        if (pathPoints == null || pathPoints.Count < 2)
         {
-            Debug.LogWarning("EnemyMovement: PathfindingManager hasn't calculated a path yet!");
+            Debug.LogError($"Invalid path received for {gameObject.name}! Count: {pathPoints?.Count ?? 0}");
             return false;
         }
-        
-        // Get the path from the pathfinding manager
-        pathWaypoints = pathfindingManager.GetCurrentPath();
-        
-        if (pathWaypoints == null || pathWaypoints.Count < 2)
-        {
-            Debug.LogWarning($"EnemyMovement: Invalid path received for {gameObject.name}!");
-            return false;
-        }
-        
-        // Convert grid positions to world positions
+    
+        // Convert grid positions to world positions with proper height
         worldWaypoints = new List<Vector3>();
-        foreach (Vector2Int gridPos in pathWaypoints)
+        foreach (Vector2Int gridPos in pathPoints)
         {
             Vector3 worldPos = gridManager.GetWorldPosition(gridPos);
-            worldPos.y += heightOffset; // Add height offset
+            // Use the same Y height as the enemy's initial position
+            worldPos.y = transform.position.y;
             worldWaypoints.Add(worldPos);
         }
-        
-        // Set initial position to first waypoint
-        transform.position = worldWaypoints[0];
-        currentWaypointIndex = 1; // Start moving toward the second waypoint
-        
-        // If there's a next waypoint, set initial rotation
-        if (currentWaypointIndex < worldWaypoints.Count)
-        {
-            Vector3 direction = worldWaypoints[currentWaypointIndex] - transform.position;
-            direction.y = 0; // Keep rotation on the horizontal plane
-            
-            if (direction != Vector3.zero)
-            {
-                transform.rotation = Quaternion.LookRotation(direction);
-            }
-        }
-        
+    
+        // Don't teleport to first waypoint, just set the index to 0
+        currentWaypointIndex = 0;
+    
         return true;
     }
 
@@ -235,7 +232,7 @@ public class EnemyMovement : MonoBehaviour
         if (pathComplete || isMovementPaused || !isPathInitialized || 
             worldWaypoints == null || currentWaypointIndex >= worldWaypoints.Count)
             return;
-        
+
         // Update speed modifiers
         UpdateSpeedModifiers();
         
@@ -254,6 +251,15 @@ public class EnemyMovement : MonoBehaviour
     /// </summary>
     private void MoveTowardsWaypoint()
     {
+
+        Debug.Log($"Moving towards waypoint {currentWaypointIndex}, current pos: {transform.position}, target: {worldWaypoints[currentWaypointIndex]}");
+    
+        Vector3 targetPosition1 = worldWaypoints[currentWaypointIndex];
+        Vector3 direction = (targetPosition1 - transform.position).normalized;
+        float distance = Vector3.Distance(transform.position, targetPosition1);
+    
+        Debug.Log($"Distance: {distance}, Direction: {direction}, Speed: {moveSpeed}");
+
         // Get the current target waypoint
         Vector3 targetPosition = worldWaypoints[currentWaypointIndex];
         
@@ -425,7 +431,7 @@ public class EnemyMovement : MonoBehaviour
             foreach (Vector2Int gridPos in pathWaypoints)
             {
                 Vector3 worldPos = gridManager.GetWorldPosition(gridPos);
-                worldPos.y += heightOffset;
+                worldPos.y += transform.position.y;
                 worldWaypoints.Add(worldPos);
             }
             
@@ -508,33 +514,5 @@ public class EnemyMovement : MonoBehaviour
         moveSpeed = Mathf.Max(0.1f, speed);
     }
     
-    /// <summary>
-    /// Debugging gizmos to show the path
-    /// </summary>
-    private void OnDrawGizmos()
-    {
-        if (worldWaypoints == null || worldWaypoints.Count < 2)
-            return;
-        
-        Gizmos.color = Color.cyan;
-        
-        // Draw lines between waypoints
-        for (int i = 0; i < worldWaypoints.Count - 1; i++)
-        {
-            Gizmos.DrawLine(worldWaypoints[i], worldWaypoints[i + 1]);
-        }
-        
-        // Draw spheres at waypoints
-        for (int i = 0; i < worldWaypoints.Count; i++)
-        {
-            Gizmos.DrawSphere(worldWaypoints[i], 0.2f);
-        }
-        
-        // Highlight current target waypoint
-        if (currentWaypointIndex < worldWaypoints.Count)
-        {
-            Gizmos.color = Color.yellow;
-            Gizmos.DrawSphere(worldWaypoints[currentWaypointIndex], 0.3f);
-        }
-    }
+
 }
