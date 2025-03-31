@@ -74,13 +74,16 @@ namespace TowerDefense.Towers
 
         private void Start()
         {
-              // Create a debug cursor that follows the mouse
-            debugCursor = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            debugCursor.transform.localScale = new Vector3(0.5f, 0.5f, 0.5f);
-            debugCursor.GetComponent<Renderer>().material.color = Color.red;
-            debugCursor.name = "DebugMouseCursor";
-            // Find required managers
             ResolveDependencies();
+    
+            // Ensure camera is in perspective mode
+            Camera mainCam = Camera.main;
+            if (mainCam != null && mainCam.orthographic)
+            {
+                Debug.Log("TowerManager: Forcing camera to perspective mode");
+                mainCam.orthographic = false;
+                mainCam.fieldOfView = 60f; // Typical perspective FOV
+            }
         }
         
         /// <summary>
@@ -470,13 +473,20 @@ namespace TowerDefense.Towers
         #endregion
 
         #region Updates and Input
+
         private void Update()
         {
             // Only process placement logic if we're in placement mode
             if (isPlacingTower)
             {
-                // Get current camera info
+                // Get current camera
                 Camera cam = Camera.main;
+        
+                // Log camera type for debugging
+                if (Input.GetKeyDown(KeyCode.C))
+                {
+                    Debug.Log($"Camera Type: {(cam.orthographic ? "Orthographic" : "Perspective")}");
+                }
         
                 // Create a plane at the grid level (y=0)
                 Plane gridPlane = new Plane(Vector3.up, Vector3.zero);
@@ -491,26 +501,29 @@ namespace TowerDefense.Towers
                     // Get the exact point where the ray intersects the plane
                     Vector3 hitPoint = ray.GetPoint(distance);
             
-                    // Use this point to position the tower preview
-                    UpdatePlacementPreview(hitPoint);
+                    // Get grid size from grid manager if available
+                    float gridSize = gridManager != null ? gridManager.GetCellSize() : 1.0f;
             
-                    // For debugging
-                    Debug.Log($"Plane Raycast hit at: {hitPoint}");
-                    Debug.DrawLine(ray.origin, hitPoint, Color.green, 0.1f);
+                    // Snap to grid
+                    float snappedX = Mathf.Round(hitPoint.x / gridSize) * gridSize;
+                    float snappedZ = Mathf.Round(hitPoint.z / gridSize) * gridSize;
+                    Vector3 snappedPosition = new Vector3(snappedX, 0, snappedZ);
+            
+                    // Position the preview
+                    if (placementPreview != null)
+                    {
+                        placementPreview.transform.position = snappedPosition;
+                    }
             
                     // Handle placement on click
                     if (Input.GetMouseButtonDown(0))
                     {
-                        Debug.Log("Mouse clicked during placement mode");
                         if (TryPlaceTower())
                         {
+                            // Optionally exit placement mode after successful placement
                             ExitPlacementMode();
                         }
                     }
-                }
-                else
-                {
-                    Debug.Log("Ray did not intersect the grid plane");
                 }
         
                 // Allow canceling
@@ -522,43 +535,8 @@ namespace TowerDefense.Towers
         }
 
 
-        // Add this method to TowerManager
-        public void DebugPlacementMode()
-        {
-            Debug.Log("DEBUG: Manually entering placement mode");
-    
-            // Create a simple cube as preview
-            if (placementPreview != null)
-                Destroy(placementPreview);
-        
-            placementPreview = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            placementPreview.transform.localScale = new Vector3(2, 2, 2);
-            placementPreview.GetComponent<Renderer>().material.color = Color.magenta;
-    
-            // Enable placement mode flag
-            isPlacingTower = true;
-    
-            Debug.Log($"DEBUG: Created preview at {placementPreview.transform.position}");
-        }
 
 
-        private void UpdatePlacementPreview(Vector3 position)
-        {
-            if (placementPreview == null)
-                return;
-    
-            // Optional: Snap to grid
-            float gridSize = 1.0f; // Adjust based on your grid size
-            float snappedX = Mathf.Round(position.x / gridSize) * gridSize;
-            float snappedZ = Mathf.Round(position.z / gridSize) * gridSize;
-    
-            Vector3 snappedPosition = new Vector3(snappedX, 0, snappedZ);
-    
-            // Position the preview
-            placementPreview.transform.position = snappedPosition;
-    
-            Debug.Log($"Updated preview position to {snappedPosition}");
-        }
         #endregion
 
         #region Tower Management

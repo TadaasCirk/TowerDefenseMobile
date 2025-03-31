@@ -91,7 +91,7 @@ public class EnemySpawner : MonoBehaviour
         if (usePathEntryPoint && pathfindingManager != null && pathfindingManager.entryPoint != null)
         {
             spawnPoint = pathfindingManager.entryPoint;
-            Debug.Log($"Using PathfindingManager's EntryPoint as spawn location: {spawnPoint.position}");
+            //Debug.Log($"Using PathfindingManager's EntryPoint as spawn location: {spawnPoint.position}");
         }
         else if (spawnPoint == null)
         {
@@ -340,7 +340,7 @@ public class EnemySpawner : MonoBehaviour
             Destroy(enemyObj);
             return;
         }
-         Debug.Log("EnemySpawner: got enemyController");
+         //Debug.Log("EnemySpawner: got enemyController");
 
         // Subscribe to enemy events
         enemyController.OnEnemyDefeated += HandleEnemyDefeated;
