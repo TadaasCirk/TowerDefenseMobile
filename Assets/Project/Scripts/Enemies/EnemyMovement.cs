@@ -252,13 +252,13 @@ public class EnemyMovement : MonoBehaviour
     private void MoveTowardsWaypoint()
     {
 
-        Debug.Log($"Moving towards waypoint {currentWaypointIndex}, current pos: {transform.position}, target: {worldWaypoints[currentWaypointIndex]}");
+        //Debug.Log($"Moving towards waypoint {currentWaypointIndex}, current pos: {transform.position}, target: {worldWaypoints[currentWaypointIndex]}");
     
         Vector3 targetPosition1 = worldWaypoints[currentWaypointIndex];
         Vector3 direction = (targetPosition1 - transform.position).normalized;
         float distance = Vector3.Distance(transform.position, targetPosition1);
     
-        Debug.Log($"Distance: {distance}, Direction: {direction}, Speed: {moveSpeed}");
+        //Debug.Log($"Distance: {distance}, Direction: {direction}, Speed: {moveSpeed}");
 
         // Get the current target waypoint
         Vector3 targetPosition = worldWaypoints[currentWaypointIndex];

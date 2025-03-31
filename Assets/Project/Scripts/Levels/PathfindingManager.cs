@@ -97,7 +97,7 @@ public class PathfindingManager : MonoBehaviour
     // In PathfindingManager.cs - add more detailed logging to Start method
     private void Start()
     {
-        Debug.Log("PathfindingManager Start - Beginning initialization");
+        //Debug.Log("PathfindingManager Start - Beginning initialization");
     
         // Find dependencies if not assigned in Inspector
         ResolveDependencies();
@@ -108,8 +108,8 @@ public class PathfindingManager : MonoBehaviour
             startGridPos = gridManager.GetGridPosition(entryPoint.position);
             endGridPos = gridManager.GetGridPosition(exitPoint.position);
 
-            Debug.Log($"Entry point world: {entryPoint.position}, grid: {startGridPos}, back to world: {gridManager.GetWorldPosition(startGridPos)}");
-            Debug.Log($"Exit point world: {exitPoint.position}, grid: {endGridPos}, back to world: {gridManager.GetWorldPosition(endGridPos)}");
+            //Debug.Log($"Entry point world: {entryPoint.position}, grid: {startGridPos}, back to world: {gridManager.GetWorldPosition(startGridPos)}");
+            //Debug.Log($"Exit point world: {exitPoint.position}, grid: {endGridPos}, back to world: {gridManager.GetWorldPosition(endGridPos)}");
         }
         else
         {
@@ -131,7 +131,7 @@ public class PathfindingManager : MonoBehaviour
 
         // Mark as initialized after initial calculation
         isInitialized = true;
-        Debug.Log("PathfindingManager: Initialization complete");
+       // Debug.Log("PathfindingManager: Initialization complete");
     }
     
     private void OnDestroy()
@@ -176,8 +176,6 @@ public class PathfindingManager : MonoBehaviour
     /// </summary>
     public void RecalculatePath()
     {
-        Debug.Log("PathfindingManager: Recalculating");
-
         if (gridManager == null || entryPoint == null || exitPoint == null)
         {
             Debug.LogWarning("PathfindingManager: Missing references for path calculation!");
@@ -194,7 +192,7 @@ public class PathfindingManager : MonoBehaviour
         if (newPath != null && newPath.Count > 0)
         {
             currentPath = newPath;
-            Debug.Log($"PathfindingManager: Path recalculated with {currentPath.Count} nodes from {startGridPos} to {endGridPos}");
+            //Debug.Log($"PathfindingManager: Path recalculated with {currentPath.Count} nodes from {startGridPos} to {endGridPos}");
         }
         else
         {

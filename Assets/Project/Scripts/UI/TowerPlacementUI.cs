@@ -348,12 +348,22 @@ namespace TowerDefense.UI
         /// <summary>
         /// Handles the place tower button being clicked
         /// </summary>
-        private void OnPlaceTowerButtonClicked()
+        public void OnPlaceTowerButtonClicked()
         {
-            if (towerManager != null && selectedTowerDefinition != null)
+            Debug.Log("Place tower button clicked");
+    
+            // Make sure we have a selected tower and a tower manager
+            if (selectedTowerDefinition == null || towerManager == null)
             {
-                towerManager.SelectTowerForPlacement(selectedTowerDefinition.towerID);
+                Debug.LogWarning("Cannot place tower: No tower selected or towerManager not found");
+                return;
             }
+    
+            // Tell the TowerManager to start placement mode, but DON'T place the tower yet
+            towerManager.SelectTowerForPlacement(selectedTowerDefinition.towerID);
+    
+            // Hide the tower info panel after starting placement
+            towerInfoPanel.SetActive(false);
         }
 
         /// <summary>

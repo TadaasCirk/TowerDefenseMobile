@@ -55,6 +55,12 @@ namespace TowerDefense.Towers
         public System.Action<Tower, int> OnTowerUpgraded;
         public System.Action<string> OnTowerUnlocked;
 
+
+
+        private GameObject debugCursor;
+        
+        
+        
         #region Initialization
 
         /// <summary>
@@ -68,6 +74,11 @@ namespace TowerDefense.Towers
 
         private void Start()
         {
+              // Create a debug cursor that follows the mouse
+            debugCursor = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            debugCursor.transform.localScale = new Vector3(0.5f, 0.5f, 0.5f);
+            debugCursor.GetComponent<Renderer>().material.color = Color.red;
+            debugCursor.name = "DebugMouseCursor";
             // Find required managers
             ResolveDependencies();
         }
@@ -215,13 +226,15 @@ namespace TowerDefense.Towers
         /// </summary>
         public void SelectTowerForPlacement(string towerID)
         {
+            Debug.Log($"TowerManager.SelectTowerForPlacement called with ID: {towerID}");
+    
             // Check if the tower is unlocked
             if (!IsTowerUnlocked(towerID))
             {
                 Debug.LogWarning($"TowerManager: Attempted to select a locked tower: {towerID}");
                 return;
             }
-            
+    
             // Get the tower definition
             TowerDefinition definition = GetTowerDefinition(towerID);
             if (definition == null)
@@ -229,13 +242,15 @@ namespace TowerDefense.Towers
                 Debug.LogWarning($"TowerManager: Tower definition not found: {towerID}");
                 return;
             }
-            
+    
+            Debug.Log($"Found tower definition: {definition.displayName}");
+    
             // Set as selected tower
             selectedTowerDefinition = definition;
-            
+    
             // Enter placement mode
             EnterPlacementMode();
-            
+    
             // Notify listeners
             OnTowerSelected?.Invoke(selectedTowerDefinition);
         }
@@ -250,49 +265,40 @@ namespace TowerDefense.Towers
                 Debug.LogWarning("TowerManager: Cannot enter placement mode without valid tower definition");
                 return;
             }
-            
+    
             isPlacingTower = true;
-            
+    
             // Create placement preview
             if (placementPreview != null)
             {
                 Destroy(placementPreview);
             }
-            
+    
+            // Use the actual tower prefab
             placementPreview = Instantiate(selectedTowerDefinition.towerPrefab);
-            
-            // Disable any components on the preview
-            MonoBehaviour[] components = placementPreview.GetComponents<MonoBehaviour>();
-            foreach (var component in components)
-            {
-                component.enabled = false;
-            }
-            
-            // Rename for clarity
             placementPreview.name = $"{selectedTowerDefinition.displayName}_Preview";
-            
-            // Set a semi-transparent material on all renderers
+    
+            // Disable any scripts on the preview
+            MonoBehaviour[] scripts = placementPreview.GetComponents<MonoBehaviour>();
+            foreach (var script in scripts)
+            {
+                script.enabled = false;
+            }
+    
+            // Make it slightly transparent to indicate it's a preview
             Renderer[] renderers = placementPreview.GetComponentsInChildren<Renderer>();
             foreach (var renderer in renderers)
             {
-                // Store original materials to restore them
-                Material[] originalMaterials = renderer.materials;
-                
-                // Create new materials array
-                Material[] newMaterials = new Material[originalMaterials.Length];
-                for (int i = 0; i < originalMaterials.Length; i++)
-                {
-                    newMaterials[i] = validPlacementMaterial;
-                }
-                
-                // Apply new materials
-                renderer.materials = newMaterials;
+                // Make a copy of the material to avoid modifying the original
+                Material mat = new Material(renderer.material);
+                // Set transparency
+                Color color = mat.color;
+                color.a = 0.7f;
+                mat.color = color;
+                renderer.material = mat;
             }
-            
-            // Position off-screen initially
-            placementPreview.transform.position = new Vector3(-1000, -1000, -1000);
-            
-            Debug.Log($"TowerManager: Entered placement mode for {selectedTowerDefinition.displayName}");
+    
+            Debug.Log($"Created tower preview for {selectedTowerDefinition.displayName}");
         }
         
         /// <summary>
@@ -318,103 +324,41 @@ namespace TowerDefense.Towers
             Debug.Log("TowerManager: Exited placement mode");
         }
         
-        /// <summary>
-        /// Updates the placement preview position and state
-        /// </summary>
-        public void UpdatePlacementPreview(Vector3 worldPosition)
-        {
-            if (!isPlacingTower || placementPreview == null || gridManager == null)
-            {
-                return;
-            }
-            
-            // Convert world position to grid position
-            Vector2Int gridPosition = gridManager.GetGridPosition(worldPosition);
-            
-            // Check if position changed
-            if (gridPosition != currentGridPosition)
-            {
-                // Reset previous highlight
-                gridManager.ResetCellHighlight(currentGridPosition);
-                currentGridPosition = gridPosition;
-            }
-            
-            // Check if placement is valid
-            canPlaceAtCurrentPosition = CanPlaceTowerAt(gridPosition);
-            
-            // Highlight grid cell
-            gridManager.HighlightCell(gridPosition, canPlaceAtCurrentPosition);
-            
-            // Update preview position
-            Vector3 previewPosition = gridManager.GetWorldPosition(gridPosition);
-            previewPosition.y += placementPreviewYOffset;
-            placementPreview.transform.position = previewPosition;
-            
-            // Update preview materials based on placement validity
-            Material previewMaterial = canPlaceAtCurrentPosition ? validPlacementMaterial : invalidPlacementMaterial;
-            
-            Renderer[] renderers = placementPreview.GetComponentsInChildren<Renderer>();
-            foreach (var renderer in renderers)
-            {
-                Material[] materials = renderer.materials;
-                for (int i = 0; i < materials.Length; i++)
-                {
-                    materials[i] = previewMaterial;
-                }
-                renderer.materials = materials;
-            }
-        }
         
         /// <summary>
         /// Attempt to place the selected tower at the current position
         /// </summary>
         public bool TryPlaceTower()
         {
-            if (!isPlacingTower || selectedTowerDefinition == null || !canPlaceAtCurrentPosition)
+            if (!isPlacingTower || selectedTowerDefinition == null)
             {
                 return false;
             }
-            
-            // Check if player has enough gold
+    
+            // Get the current position of the preview
+            Vector3 placementPosition = placementPreview.transform.position;
+    
+            // Check if player can afford the tower
             if (gameManager != null && !gameManager.CanAfford(selectedTowerDefinition.purchaseCost))
             {
-                Debug.Log("TowerManager: Cannot afford tower");
+                Debug.Log("Cannot afford tower");
                 return false;
             }
-            
-            // Place the tower
-            Tower placedTower = PlaceTower(currentGridPosition, selectedTowerDefinition);
-            
-            if (placedTower != null)
+    
+            // Create the actual tower
+            GameObject tower = Instantiate(selectedTowerDefinition.towerPrefab, placementPosition, Quaternion.identity);
+            tower.name = selectedTowerDefinition.displayName;
+    
+            // Deduct the cost
+            if (gameManager != null)
             {
-                // Deduct cost
-                if (gameManager != null)
-                {
-                    gameManager.SpendGold(selectedTowerDefinition.purchaseCost);
-                }
-                
-                // Notify listeners
-                OnTowerPlaced?.Invoke(placedTower);
-                
-                Debug.Log($"TowerManager: Placed {selectedTowerDefinition.displayName} at {currentGridPosition}");
-                
-                // Continue placing the same tower type if there's enough gold
-                if (gameManager != null && gameManager.CanAfford(selectedTowerDefinition.purchaseCost))
-                {
-                    // Just reset the placement preview to continue placing
-                    Destroy(placementPreview);
-                    EnterPlacementMode();
-                }
-                else
-                {
-                    // Exit placement mode if can't afford more
-                    ExitPlacementMode();
-                }
-                
-                return true;
+                gameManager.SpendGold(selectedTowerDefinition.purchaseCost);
             }
-            
-            return false;
+    
+            Debug.Log($"Tower placed at {placementPosition}");
+    
+            // Continue in placement mode for more towers of same type
+            return true;
         }
         
         /// <summary>
@@ -526,26 +470,50 @@ namespace TowerDefense.Towers
         #endregion
 
         #region Updates and Input
-
         private void Update()
         {
-            // Handle tower placement preview
+            // Only process placement logic if we're in placement mode
             if (isPlacingTower)
             {
-                // Get mouse position and convert to world position
-                Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-                if (Physics.Raycast(ray, out RaycastHit hit, 100f, placementLayerMask))
+                // Get current camera info
+                Camera cam = Camera.main;
+        
+                // Create a plane at the grid level (y=0)
+                Plane gridPlane = new Plane(Vector3.up, Vector3.zero);
+        
+                // Cast a ray from the camera through the mouse position
+                Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+        
+                float distance;
+                // If the ray hits the grid plane
+                if (gridPlane.Raycast(ray, out distance))
                 {
-                    UpdatePlacementPreview(hit.point);
+                    // Get the exact point where the ray intersects the plane
+                    Vector3 hitPoint = ray.GetPoint(distance);
+            
+                    // Use this point to position the tower preview
+                    UpdatePlacementPreview(hitPoint);
+            
+                    // For debugging
+                    Debug.Log($"Plane Raycast hit at: {hitPoint}");
+                    Debug.DrawLine(ray.origin, hitPoint, Color.green, 0.1f);
+            
+                    // Handle placement on click
+                    if (Input.GetMouseButtonDown(0))
+                    {
+                        Debug.Log("Mouse clicked during placement mode");
+                        if (TryPlaceTower())
+                        {
+                            ExitPlacementMode();
+                        }
+                    }
                 }
-                
-                // Handle placement on click
-                if (Input.GetMouseButtonDown(0))
+                else
                 {
-                    TryPlaceTower();
+                    Debug.Log("Ray did not intersect the grid plane");
                 }
-                
-                // Handle cancel on right click or escape
+        
+                // Allow canceling
                 if (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape))
                 {
                     ExitPlacementMode();
@@ -553,6 +521,44 @@ namespace TowerDefense.Towers
             }
         }
 
+
+        // Add this method to TowerManager
+        public void DebugPlacementMode()
+        {
+            Debug.Log("DEBUG: Manually entering placement mode");
+    
+            // Create a simple cube as preview
+            if (placementPreview != null)
+                Destroy(placementPreview);
+        
+            placementPreview = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            placementPreview.transform.localScale = new Vector3(2, 2, 2);
+            placementPreview.GetComponent<Renderer>().material.color = Color.magenta;
+    
+            // Enable placement mode flag
+            isPlacingTower = true;
+    
+            Debug.Log($"DEBUG: Created preview at {placementPreview.transform.position}");
+        }
+
+
+        private void UpdatePlacementPreview(Vector3 position)
+        {
+            if (placementPreview == null)
+                return;
+    
+            // Optional: Snap to grid
+            float gridSize = 1.0f; // Adjust based on your grid size
+            float snappedX = Mathf.Round(position.x / gridSize) * gridSize;
+            float snappedZ = Mathf.Round(position.z / gridSize) * gridSize;
+    
+            Vector3 snappedPosition = new Vector3(snappedX, 0, snappedZ);
+    
+            // Position the preview
+            placementPreview.transform.position = snappedPosition;
+    
+            Debug.Log($"Updated preview position to {snappedPosition}");
+        }
         #endregion
 
         #region Tower Management
@@ -598,6 +604,10 @@ namespace TowerDefense.Towers
             base.OnDestroy();
         }
 
+
         #endregion
     }
+
+
+
 }
