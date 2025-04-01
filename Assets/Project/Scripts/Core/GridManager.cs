@@ -43,7 +43,13 @@ public class GridManager : MonoBehaviour
     [SerializeField] private bool useCellPooling = true;
     
     [Tooltip("Maximum number of cells to instantiate when pooling")]
-    [SerializeField] private int maxPoolSize = 100;
+    [SerializeField] private int initialPoolSize = 100;
+    
+    [Tooltip("Should use spatial partitioning for cell lookup?")]
+    [SerializeField] private bool useSpatialPartitioning = true;
+    
+    [Tooltip("View distance for cell culling (0 = no culling)")]
+    [SerializeField] private float viewDistance = 20f;
 
     // The grid data structure that tracks cell occupancy and properties
     private GridCell[,] grid;
@@ -52,7 +58,7 @@ public class GridManager : MonoBehaviour
     private Dictionary<Vector2Int, GameObject> cellVisualizers = new Dictionary<Vector2Int, GameObject>();
     
     // Object pool for cell visualizers
-    private Queue<GameObject> cellVisualizerPool = new Queue<GameObject>();
+    private GridObjectPool cellVisualizerPool;
     
     // Currently highlighted cell
     private Vector2Int? highlightedCell = null;
@@ -63,29 +69,27 @@ public class GridManager : MonoBehaviour
     // Flag to show/hide the grid
     private bool isGridVisible = false;
 
-    private float pathHeight; 
-
-    /// <summary>
-    /// Information about a cell in the grid
-    /// </summary>
-    public class GridCell
-    {
-        public bool IsOccupied { get; set; }
-        public bool IsWalkable { get; set; }
-        public GameObject OccupyingObject { get; set; }
-
-        public GridCell(bool isWalkable = true)
-        {
-            IsOccupied = false;
-            IsWalkable = isWalkable;
-            OccupyingObject = null;
-        }
-    }
+    private float pathHeight;
+    
+    // Material cache
+    private Dictionary<string, Material> materialCache = new Dictionary<string, Material>();
+    
+    // Spatial partitioning for cell lookup
+    private GridSpatialPartitioning spatialPartitioning;
+    
+    // Camera reference for culling
+    private Camera mainCamera;
+    
+    // Cached grid bounds for quick access
+    private Bounds gridBounds;
 
     private void Awake()
     {
         // Initialize the grid
         InitializeGrid();
+        
+        // Initialize material cache
+        InitializeMaterialCache();
         
         // Register with ServiceLocator
         ServiceLocator.Register<GridManager>(this);
@@ -96,9 +100,32 @@ public class GridManager : MonoBehaviour
         // Find dependencies if not assigned in Inspector
         ResolveDependencies();
         
-        // Create cell visualizers but don't show them initially
-        Debug.Log($"Grid dimensions: {gridWidth}x{gridHeight}");
+        // Cache main camera reference for culling
+        mainCamera = Camera.main;
+        
+        // Initialize spatial partitioning
+        if (useSpatialPartitioning)
+        {
+            spatialPartitioning = new GridSpatialPartitioning(gridWidth, gridHeight);
+        }
+        
+        // Initialize object pool
+        if (useCellPooling)
+        {
+            cellVisualizerPool = new GridObjectPool(cellPrefab, transform, 
+                                               Mathf.Min(initialPoolSize, gridWidth * gridHeight),
+                                               gridWidth * gridHeight);
+        }
+        
+        // Calculate grid bounds
+        gridBounds = new Bounds(
+            new Vector3(gridWidth * cellSize / 2, 0, gridHeight * cellSize / 2),
+            new Vector3(gridWidth * cellSize, 0.1f, gridHeight * cellSize));
+        
+        // Create cell visualizers
         CreateCellVisualizers();
+        
+        // Hide grid initially
         SetGridVisibility(false);
     }
     
@@ -106,6 +133,64 @@ public class GridManager : MonoBehaviour
     {
         // Unregister from ServiceLocator
         ServiceLocator.Unregister<GridManager>();
+        
+        // Clean up object pool if exists
+        if (cellVisualizerPool != null)
+        {
+            cellVisualizerPool.Clear();
+        }
+        
+        // Clear material cache
+        foreach (var material in materialCache.Values)
+        {
+            if (material != null && !material.hideFlags.HasFlag(HideFlags.NotEditable))
+            {
+                Destroy(material);
+            }
+        }
+        materialCache.Clear();
+    }
+    
+    /// <summary>
+    /// Initialize material cache to avoid creating new materials for each cell
+    /// </summary>
+    private void InitializeMaterialCache()
+    {
+        // Cache default material
+        if (defaultCellMaterial != null)
+        {
+            materialCache["default"] = defaultCellMaterial;
+        }
+        
+        // Cache valid placement material
+        if (validPlacementMaterial != null)
+        {
+            materialCache["valid"] = validPlacementMaterial;
+        }
+        
+        // Cache invalid placement material
+        if (invalidPlacementMaterial != null)
+        {
+            materialCache["invalid"] = invalidPlacementMaterial;
+        }
+        
+        // Cache path material
+        if (pathMaterial != null)
+        {
+            materialCache["path"] = pathMaterial;
+        }
+    }
+    
+    /// <summary>
+    /// Get a material from cache by key
+    /// </summary>
+    private Material GetMaterial(string key)
+    {
+        if (materialCache.TryGetValue(key, out Material material))
+        {
+            return material;
+        }
+        return null;
     }
     
     /// <summary>
@@ -143,7 +228,7 @@ public class GridManager : MonoBehaviour
         {
             for (int y = 0; y < gridHeight; y++)
             {
-                grid[x, y] = new GridCell();
+                grid[x, y] = new GridCell(true);
             }
         }
         
@@ -161,21 +246,8 @@ public class GridManager : MonoBehaviour
             return;
         }
 
-        // If using pooling, create a pool of reusable cell visualizers
-        if (useCellPooling)
-        {
-            int poolSize = Mathf.Min(gridWidth * gridHeight, maxPoolSize);
-            
-            for (int i = 0; i < poolSize; i++)
-            {
-                GameObject cell = Instantiate(cellPrefab, transform);
-                cell.SetActive(false);
-                cellVisualizerPool.Enqueue(cell);
-            }
-            
-            Debug.Log($"Created cell visualizer pool with {poolSize} objects");
-        }
-        else
+        // With object pooling, cells are created on-demand when needed
+        if (!useCellPooling)
         {
             // Create a visualizer for each cell in the grid
             for (int x = 0; x < gridWidth; x++)
@@ -192,7 +264,7 @@ public class GridManager : MonoBehaviour
                     Renderer renderer = cell.GetComponent<Renderer>();
                     if (renderer != null)
                     {
-                        renderer.material = defaultCellMaterial;
+                        renderer.material = GetMaterial("default");
                     }
                     
                     cell.name = $"Cell_{x}_{y}";
@@ -203,7 +275,7 @@ public class GridManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Shows or hides the visualized grid
+    /// Shows or hides the visualized grid with view frustum culling
     /// </summary>
     public void SetGridVisibility(bool isVisible)
     {
@@ -217,10 +289,37 @@ public class GridManager : MonoBehaviour
                 // Deactivate all active cells and return them to the pool
                 foreach (var visualizer in cellVisualizers.Values)
                 {
-                    visualizer.SetActive(false);
-                    cellVisualizerPool.Enqueue(visualizer);
+                    cellVisualizerPool.Return(visualizer);
                 }
                 cellVisualizers.Clear();
+            }
+            else if (viewDistance > 0 && mainCamera != null)
+            {
+                // Only create visualizers for cells in view
+                List<Vector2Int> visibleCells;
+                
+                if (useSpatialPartitioning && spatialPartitioning != null)
+                {
+                    visibleCells = spatialPartitioning.GetCellsInView(mainCamera, cellSize);
+                }
+                else
+                {
+                    // Fallback to showing all cells
+                    visibleCells = new List<Vector2Int>();
+                    for (int x = 0; x < gridWidth; x++)
+                    {
+                        for (int y = 0; y < gridHeight; y++)
+                        {
+                            visibleCells.Add(new Vector2Int(x, y));
+                        }
+                    }
+                }
+                
+                // Create visualizers for visible cells
+                foreach (Vector2Int pos in visibleCells)
+                {
+                    GetCellVisualizer(pos);
+                }
             }
         }
         else
@@ -427,7 +526,7 @@ public class GridManager : MonoBehaviour
             Renderer renderer = cellVisualizer.GetComponent<Renderer>();
             if (renderer != null)
             {
-                renderer.material = isValid ? validPlacementMaterial : invalidPlacementMaterial;
+                renderer.material = isValid ? GetMaterial("valid") : GetMaterial("invalid");
             }
             
             // Ensure the cell is visible
@@ -455,14 +554,13 @@ public class GridManager : MonoBehaviour
                 Renderer renderer = cellVisualizer.GetComponent<Renderer>();
                 if (renderer != null)
                 {
-                    renderer.material = defaultCellMaterial;
+                    renderer.material = GetMaterial("default");
                 }
             }
             else if (useCellPooling)
             {
                 // If using pooling and grid not visible, return to pool
-                cellVisualizer.SetActive(false);
-                cellVisualizerPool.Enqueue(cellVisualizer);
+                cellVisualizerPool.Return(cellVisualizer);
                 cellVisualizers.Remove(gridPosition);
             }
             else
@@ -505,7 +603,7 @@ public class GridManager : MonoBehaviour
                     Renderer renderer = cellVisualizer.GetComponent<Renderer>();
                     if (renderer != null)
                     {
-                        renderer.material = pathMaterial;
+                        renderer.material = GetMaterial("path");
                     }
                     
                     // Ensure the cell is visible
@@ -516,7 +614,7 @@ public class GridManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Gets or creates a cell visualizer for the specified grid position
+    /// Gets or creates a cell visualizer for the specified grid position using object pooling
     /// </summary>
     private GameObject GetCellVisualizer(Vector2Int gridPosition)
     {
@@ -534,38 +632,27 @@ public class GridManager : MonoBehaviour
             }
             
             // Otherwise, get one from the pool
-            if (cellVisualizerPool.Count > 0)
+            GameObject cellVisualizer = cellVisualizerPool.Get();
+            if (cellVisualizer == null) return null;
+            
+            // Position the visualizer
+            Vector3 worldPosition = GetWorldPosition(gridPosition);
+            cellVisualizer.transform.position = worldPosition;
+            
+            // Ensure proper scale
+            cellVisualizer.transform.localScale = new Vector3(cellSize, 0.1f, cellSize);
+            
+            // Reset material
+            Renderer renderer = cellVisualizer.GetComponent<Renderer>();
+            if (renderer != null)
             {
-                GameObject cellVisualizer = cellVisualizerPool.Dequeue();
-                
-                // Position the visualizer
-                Vector3 worldPosition = GetWorldPosition(gridPosition);
-                cellVisualizer.transform.position = worldPosition;
-                
-                // Ensure proper scale
-                cellVisualizer.transform.localScale = new Vector3(cellSize, 0.1f, cellSize);
-                
-                // Reset material
-                Renderer renderer = cellVisualizer.GetComponent<Renderer>();
-                if (renderer != null)
-                {
-                    renderer.material = defaultCellMaterial;
-                }
-                
-                cellVisualizer.name = $"Cell_{gridPosition.x}_{gridPosition.y}";
-                cellVisualizers.Add(gridPosition, cellVisualizer);
-                
-                return cellVisualizer;
+                renderer.material = GetMaterial("default");
             }
             
-            // If the pool is empty, create a new visualizer (should be rare)
-            Vector3 newPosition = GetWorldPosition(gridPosition);
-            GameObject newCell = Instantiate(cellPrefab, newPosition, Quaternion.identity, transform);
-            newCell.transform.localScale = new Vector3(cellSize, 0.1f, cellSize);
-            newCell.name = $"Cell_{gridPosition.x}_{gridPosition.y}";
-            cellVisualizers.Add(gridPosition, newCell);
+            cellVisualizer.name = $"Cell_{gridPosition.x}_{gridPosition.y}";
+            cellVisualizers.Add(gridPosition, cellVisualizer);
             
-            return newCell;
+            return cellVisualizer;
         }
         else
         {
@@ -586,7 +673,7 @@ public class GridManager : MonoBehaviour
     {
         if (!IsWithinGrid(gridPosition))
         {
-            return null;
+            return new GridCell(false);
         }
         
         return grid[gridPosition.x, gridPosition.y];

@@ -75,15 +75,6 @@ namespace TowerDefense.Towers
         private void Start()
         {
             ResolveDependencies();
-    
-            // Ensure camera is in perspective mode
-            Camera mainCam = Camera.main;
-            if (mainCam != null && mainCam.orthographic)
-            {
-                Debug.Log("TowerManager: Forcing camera to perspective mode");
-                mainCam.orthographic = false;
-                mainCam.fieldOfView = 60f; // Typical perspective FOV
-            }
         }
         
         /// <summary>
@@ -105,7 +96,6 @@ namespace TowerDefense.Towers
                 }
             }
             
-            Debug.Log($"TowerManager: Initialized {towerDefinitionsMap.Count} tower definitions");
         }
         
         /// <summary>
@@ -123,7 +113,6 @@ namespace TowerDefense.Towers
                 }
             }
             
-            Debug.Log($"TowerManager: Initialized with {unlockedTowerIDs.Count} unlocked towers");
         }
         
         /// <summary>
@@ -215,7 +204,6 @@ namespace TowerDefense.Towers
             
             unlockedTowerIDs.Add(towerID);
             OnTowerUnlocked?.Invoke(towerID);
-            Debug.Log($"TowerManager: Unlocked tower {towerID}");
             
             return true;
         }
@@ -229,7 +217,6 @@ namespace TowerDefense.Towers
         /// </summary>
         public void SelectTowerForPlacement(string towerID)
         {
-            Debug.Log($"TowerManager.SelectTowerForPlacement called with ID: {towerID}");
     
             // Check if the tower is unlocked
             if (!IsTowerUnlocked(towerID))
@@ -246,7 +233,6 @@ namespace TowerDefense.Towers
                 return;
             }
     
-            Debug.Log($"Found tower definition: {definition.displayName}");
     
             // Set as selected tower
             selectedTowerDefinition = definition;
@@ -301,7 +287,6 @@ namespace TowerDefense.Towers
                 renderer.material = mat;
             }
     
-            Debug.Log($"Created tower preview for {selectedTowerDefinition.displayName}");
         }
         
         /// <summary>
@@ -323,8 +308,6 @@ namespace TowerDefense.Towers
             {
                 gridManager.ResetCellHighlight(currentGridPosition);
             }
-            
-            Debug.Log("TowerManager: Exited placement mode");
         }
         
         
@@ -358,9 +341,6 @@ namespace TowerDefense.Towers
                 gameManager.SpendGold(selectedTowerDefinition.purchaseCost);
             }
     
-            Debug.Log($"Tower placed at {placementPosition}");
-    
-            // Continue in placement mode for more towers of same type
             return true;
         }
         
@@ -479,14 +459,7 @@ namespace TowerDefense.Towers
             // Only process placement logic if we're in placement mode
             if (isPlacingTower)
             {
-                // Get current camera
                 Camera cam = Camera.main;
-        
-                // Log camera type for debugging
-                if (Input.GetKeyDown(KeyCode.C))
-                {
-                    Debug.Log($"Camera Type: {(cam.orthographic ? "Orthographic" : "Perspective")}");
-                }
         
                 // Create a plane at the grid level (y=0)
                 Plane gridPlane = new Plane(Vector3.up, Vector3.zero);
