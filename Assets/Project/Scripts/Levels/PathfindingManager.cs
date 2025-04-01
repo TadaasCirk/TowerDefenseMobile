@@ -398,14 +398,14 @@ public class PathfindingManager : MonoBehaviour
         if (gridManager == null)
             return false;
             
-        GridManager.GridCell cell = gridManager.GetCell(position);
-        return cell != null && cell.IsWalkable;
+        GridCell cell = gridManager.GetCell(position);
+        return cell.IsWalkable;
     }
 
     /// <summary>
     /// Checks if a path exists in the given grid (for tower placement validation)
     /// </summary>
-    public bool CheckPathExists(GridManager.GridCell[,] simulatedGrid)
+    public bool CheckPathExists(GridCell[,] simulatedGrid)
     {
         // Create a specialized path grid from the simulated grid
         Dictionary<Vector2Int, PathNode> pathGrid = new Dictionary<Vector2Int, PathNode>();
@@ -420,7 +420,7 @@ public class PathfindingManager : MonoBehaviour
             for (int y = 0; y < height; y++)
             {
                 Vector2Int position = new Vector2Int(x, y);
-                bool isWalkable = simulatedGrid[x, y] != null && simulatedGrid[x, y].IsWalkable;
+                bool isWalkable = simulatedGrid[x, y].IsWalkable;
                 pathGrid[position] = new PathNode(position, isWalkable);
             }
         }
@@ -550,7 +550,6 @@ public class PathfindingManager : MonoBehaviour
     /// <summary>
     /// Draw lines showing the path in the Scene view for debugging
     /// </summary>
-    // In PathfindingManager.OnDrawGizmos()
     private void OnDrawGizmos()
     {
         if (!visualizePath || currentPath == null || currentPath.Count < 2 || gridManager == null)
