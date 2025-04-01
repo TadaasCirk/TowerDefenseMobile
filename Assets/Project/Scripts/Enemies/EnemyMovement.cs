@@ -75,7 +75,7 @@ public class EnemyMovement : MonoBehaviour
     
     private void Start()
     {
-        Debug.Log($"Enemy {gameObject.name} initializing at position: {transform.position}");
+        //Debug.Log($"Enemy {gameObject.name} initializing at position: {transform.position}");
         
         GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         marker.transform.parent = this.transform;
@@ -132,7 +132,7 @@ public class EnemyMovement : MonoBehaviour
         if (TryInitializePath())
         {
             isPathInitialized = true;
-            Debug.Log($"Path initialized for {gameObject.name} with {worldWaypoints.Count} waypoints");
+            //Debug.Log($"Path initialized for {gameObject.name} with {worldWaypoints.Count} waypoints");
             
             // Important: Find the closest waypoint to start from rather than teleporting
             if (worldWaypoints != null && worldWaypoints.Count > 1)
@@ -161,7 +161,7 @@ public class EnemyMovement : MonoBehaviour
                     currentWaypointIndex = closestIndex;
                 }
                 
-                Debug.Log($"Starting from waypoint index: {currentWaypointIndex}");
+                //Debug.Log($"Starting from waypoint index: {currentWaypointIndex}");
             }
         }
         else

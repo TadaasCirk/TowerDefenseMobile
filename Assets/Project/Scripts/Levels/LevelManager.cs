@@ -1,6 +1,7 @@
 using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
 using UnityEngine.SceneManagement;
 
 public class LevelManager : MonoBehaviour
@@ -11,9 +12,9 @@ public class LevelManager : MonoBehaviour
     [SerializeField] private int totalWaves = 10;
     
     [Header("UI References")]
-    [SerializeField] private Text healthText;
-    [SerializeField] private Text goldText;
-    [SerializeField] private Text waveText;
+    [SerializeField] private TextMeshProUGUI healthText;
+    [SerializeField] private TextMeshProUGUI goldText;
+    [SerializeField] private TextMeshProUGUI waveText;
     [SerializeField] private Button pauseButton;
     [SerializeField] private GameObject pausePanel;
     
