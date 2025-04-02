@@ -91,7 +91,6 @@ public class EnemySpawner : MonoBehaviour
         if (usePathEntryPoint && pathfindingManager != null && pathfindingManager.entryPoint != null)
         {
             spawnPoint = pathfindingManager.entryPoint;
-            //Debug.Log($"Using PathfindingManager's EntryPoint as spawn location: {spawnPoint.position}");
         }
         else if (spawnPoint == null)
         {
@@ -228,7 +227,6 @@ public class EnemySpawner : MonoBehaviour
         
         if (currentWaveIndex >= waves.Count)
         {
-            Debug.Log("EnemySpawner: All waves completed!");
             OnAllWavesComplete?.Invoke(waves.Count);
             return;
         }
@@ -303,7 +301,7 @@ public class EnemySpawner : MonoBehaviour
             {
                 SpawnEnemy(enemyGroup.enemyPrefab, enemyGroup.difficultyMultiplier);
                 enemiesSpawnedInCurrentWave++;
-                
+                Debug.Log($"enemiesSpawnedInCurrentWave {enemiesSpawnedInCurrentWave}");
                 // Wait between spawns
                 yield return new WaitForSeconds(enemyGroup.timeBetweenSpawns);
             }
@@ -327,10 +325,11 @@ public class EnemySpawner : MonoBehaviour
             return;
         }
         Vector3 spawnPosition = spawnPoint.position;
+        spawnPosition += new Vector3(UnityEngine.Random.Range(-0.2f, 0.2f), 0, UnityEngine.Random.Range(-0.2f, 0.2f));
         GameObject enemyObj = Instantiate(enemyPrefab, spawnPosition, Quaternion.identity);
         enemyObj.transform.SetParent(transform);
         
-        //Debug.Log($"Enemy spawned at position: {spawnPosition}");
+        Debug.Log($"Enemy spawned at position: {spawnPosition}");
         // Get and initialize enemy controller
         EnemyController enemyController = enemyObj.GetComponent<EnemyController>();
         
@@ -340,7 +339,7 @@ public class EnemySpawner : MonoBehaviour
             Destroy(enemyObj);
             return;
         }
-         //Debug.Log("EnemySpawner: got enemyController");
+         Debug.Log("EnemySpawner: got enemyController");
 
         // Subscribe to enemy events
         enemyController.OnEnemyDefeated += HandleEnemyDefeated;
@@ -469,27 +468,7 @@ public class EnemySpawner : MonoBehaviour
         }
     }
     
-    /// <summary>
-    /// Spawns a specific enemy type for testing
-    /// </summary>
-    public void SpawnEnemyForTesting(string enemyPrefabName)
-    {
-        // Find the prefab in any wave
-        foreach (var wave in waves)
-        {
-            foreach (var group in wave.enemyGroups)
-            {
-                if (group.enemyPrefab != null && group.enemyPrefab.name == enemyPrefabName)
-                {
-                    SpawnEnemy(group.enemyPrefab, 1.0f);
-                    return;
-                }
-            }
-        }
-        
-        Debug.LogWarning($"EnemySpawner: Could not find enemy prefab named {enemyPrefabName} for testing");
-    }
-    
+   
     private void OnDestroy()
     {
         // Clean up event subscriptions to prevent memory leaks
