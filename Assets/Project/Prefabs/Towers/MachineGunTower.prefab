@@ -165,6 +165,6 @@ MonoBehaviour:
   levelVisuals: []
   attackEffect: {fileID: 0}
   attackSound: {fileID: 0}
-  purchaseCost: 100
+  purchaseCost: 20
   upgradeCosts: 
   sellValuePercent: 0.7

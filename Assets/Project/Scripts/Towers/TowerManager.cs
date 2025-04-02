@@ -126,7 +126,7 @@ namespace TowerDefense.Towers
             
             gameManager = ServiceLocator.Get<GameManager>(true);
             if (gameManager == null) gameManager = FindObjectOfType<GameManager>();
-            
+
             pathfindingManager = ServiceLocator.Get<PathfindingManager>(true);
             if (pathfindingManager == null) pathfindingManager = FindObjectOfType<PathfindingManager>();
             
@@ -217,7 +217,6 @@ namespace TowerDefense.Towers
         /// </summary>
         public void SelectTowerForPlacement(string towerID)
         {
-    
             // Check if the tower is unlocked
             if (!IsTowerUnlocked(towerID))
             {
@@ -320,27 +319,41 @@ namespace TowerDefense.Towers
             {
                 return false;
             }
-    
-            // Get the current position of the preview
-            Vector3 placementPosition = placementPreview.transform.position;
-    
+
+            // Get the current grid position
+            Vector2Int gridPos = currentGridPosition;
+
             // Check if player can afford the tower
             if (gameManager != null && !gameManager.CanAfford(selectedTowerDefinition.purchaseCost))
             {
                 Debug.Log("Cannot afford tower");
                 return false;
             }
-    
-            // Create the actual tower
-            GameObject tower = Instantiate(selectedTowerDefinition.towerPrefab, placementPosition, Quaternion.identity);
-            tower.name = selectedTowerDefinition.displayName;
-    
-            // Deduct the cost
+
+            // Check if placement is valid
+            if (!CanPlaceTowerAt(gridPos))
+            {
+                Debug.Log("Invalid placement location");
+                return false;
+            }
+
+            // Place the tower
+            Tower placedTower = PlaceTower(gridPos, selectedTowerDefinition);
+            if (placedTower == null)
+            {
+                Debug.Log("Failed to place tower");
+                return false;
+            }
+
+            // Deduct the cost - THIS IS THE KEY PART
             if (gameManager != null)
             {
                 gameManager.SpendGold(selectedTowerDefinition.purchaseCost);
             }
     
+            // Notify listeners
+            OnTowerPlaced?.Invoke(placedTower);
+
             return true;
         }
         
@@ -454,18 +467,24 @@ namespace TowerDefense.Towers
 
         #region Updates and Input
 
+// In TowerManager.cs - Update method
         private void Update()
         {
             // Only process placement logic if we're in placement mode
             if (isPlacingTower)
             {
                 Camera cam = Camera.main;
+                if (cam == null)
+                {
+                    Debug.LogError("Main camera not found!");
+                    return;
+                }
+
+                // Cast a ray from the camera through the mouse position
+                Ray ray = cam.ScreenPointToRay(Input.mousePosition);
         
                 // Create a plane at the grid level (y=0)
                 Plane gridPlane = new Plane(Vector3.up, Vector3.zero);
-        
-                // Cast a ray from the camera through the mouse position
-                Ray ray = cam.ScreenPointToRay(Input.mousePosition);
         
                 float distance;
                 // If the ray hits the grid plane
@@ -474,18 +493,23 @@ namespace TowerDefense.Towers
                     // Get the exact point where the ray intersects the plane
                     Vector3 hitPoint = ray.GetPoint(distance);
             
-                    // Get grid size from grid manager if available
-                    float gridSize = gridManager != null ? gridManager.GetCellSize() : 1.0f;
-            
-                    // Snap to grid
-                    float snappedX = Mathf.Round(hitPoint.x / gridSize) * gridSize;
-                    float snappedZ = Mathf.Round(hitPoint.z / gridSize) * gridSize;
-                    Vector3 snappedPosition = new Vector3(snappedX, 0, snappedZ);
-            
-                    // Position the preview
-                    if (placementPreview != null)
+                    // Get grid position - THIS IS THE CRITICAL PART
+                    if (gridManager != null)
                     {
-                        placementPreview.transform.position = snappedPosition;
+                        Vector2Int gridPosition = gridManager.GetGridPosition(hitPoint);
+                        currentGridPosition = gridPosition;
+                
+                        // Highlight cell based on placement validity
+                        bool canPlace = CanPlaceTowerAt(gridPosition);
+                        gridManager.HighlightCell(gridPosition, canPlace);
+                        canPlaceAtCurrentPosition = canPlace;
+                
+                        // Position the preview at the correct world position
+                        if (placementPreview != null)
+                        {
+                            Vector3 worldPos = gridManager.GetWorldPosition(gridPosition);
+                            placementPreview.transform.position = worldPos;
+                        }
                     }
             
                     // Handle placement on click
@@ -493,13 +517,12 @@ namespace TowerDefense.Towers
                     {
                         if (TryPlaceTower())
                         {
-                            // Optionally exit placement mode after successful placement
                             ExitPlacementMode();
                         }
                     }
                 }
         
-                // Allow canceling
+                // Allow canceling with right-click or Escape
                 if (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape))
                 {
                     ExitPlacementMode();
