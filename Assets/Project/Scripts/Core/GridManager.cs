@@ -99,33 +99,33 @@ public class GridManager : MonoBehaviour
     {
         // Find dependencies if not assigned in Inspector
         ResolveDependencies();
-        
+    
         // Cache main camera reference for culling
         mainCamera = Camera.main;
-        
-        // Initialize spatial partitioning
-        if (useSpatialPartitioning)
-        {
-            spatialPartitioning = new GridSpatialPartitioning(gridWidth, gridHeight);
-        }
-        
-        // Initialize object pool
+    
+        // Initialize object pool FIRST - before anyone tries to use it
         if (useCellPooling)
         {
             cellVisualizerPool = new GridObjectPool(cellPrefab, transform, 
                                                Mathf.Min(initialPoolSize, gridWidth * gridHeight),
                                                gridWidth * gridHeight);
         }
-        
+    
+        // Initialize spatial partitioning
+        if (useSpatialPartitioning)
+        {
+            spatialPartitioning = new GridSpatialPartitioning(gridWidth, gridHeight);
+        }
+    
         // Calculate grid bounds
         gridBounds = new Bounds(
             new Vector3(gridWidth * cellSize / 2, 0, gridHeight * cellSize / 2),
             new Vector3(gridWidth * cellSize, 0.1f, gridHeight * cellSize));
-        
+    
         // Create cell visualizers
         CreateCellVisualizers();
-        
-        // Hide grid initially
+    
+        // Hide grid initially LAST - after all initialization is done
         SetGridVisibility(false);
     }
     
@@ -577,94 +577,115 @@ public class GridManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Visualizes a path through the grid
-    /// </summary>
-    public void VisualizePath(List<Vector2Int> path)
-    {
-        // Reset previous path visualization
-        foreach (var position in currentPath)
+        /// <summary>
+        /// Visualizes a path through the grid
+        /// </summary>
+        public void VisualizePath(List<Vector2Int> path)
         {
-            ResetCellHighlight(position);
-        }
-        
-        currentPath = new List<Vector2Int>(path);
-        
-        // Highlight the new path
-        foreach (var position in path)
-        {
-            if (IsWithinGrid(position))
+            if (path == null)
             {
-                GameObject cellVisualizer = GetCellVisualizer(position);
-                
-                if (cellVisualizer != null)
+                Debug.LogWarning("GridManager: Cannot visualize null path");
+                return;
+            }
+    
+            // Reset previous path visualization
+            foreach (var position in currentPath)
+            {
+                ResetCellHighlight(position);
+            }
+    
+            currentPath = new List<Vector2Int>(path);
+    
+            // Highlight the new path
+            foreach (var position in path)
+            {
+                if (IsWithinGrid(position))
                 {
-                    // Set path material
-                    Renderer renderer = cellVisualizer.GetComponent<Renderer>();
-                    if (renderer != null)
+                    GameObject cellVisualizer = GetCellVisualizer(position);
+            
+                    if (cellVisualizer != null)
                     {
-                        renderer.material = GetMaterial("path");
+                        // Set path material
+                        Renderer renderer = cellVisualizer.GetComponent<Renderer>();
+                        if (renderer != null)
+                        {
+                            Material material = GetMaterial("path");
+                            if (material != null)
+                            {
+                                renderer.material = material;
+                            }
+                        }
+                
+                        // Ensure the cell is visible
+                        cellVisualizer.SetActive(true);
                     }
-                    
-                    // Ensure the cell is visible
-                    cellVisualizer.SetActive(true);
                 }
             }
         }
-    }
 
-    /// <summary>
-    /// Gets or creates a cell visualizer for the specified grid position using object pooling
-    /// </summary>
-    private GameObject GetCellVisualizer(Vector2Int gridPosition)
-    {
-        if (!IsWithinGrid(gridPosition))
+        /// <summary>
+        /// Gets or creates a cell visualizer for the specified grid position using object pooling
+        /// </summary>
+        private GameObject GetCellVisualizer(Vector2Int gridPosition)
         {
+            if (!IsWithinGrid(gridPosition))
+            {
+                return null;
+            }
+    
+            if (useCellPooling)
+            {
+                // If we already have a visualizer for this position, return it
+                if (cellVisualizers.TryGetValue(gridPosition, out GameObject existingVisualizer))
+                {
+                    return existingVisualizer;
+                }
+        
+                // Check if cell pool is initialized
+                if (cellVisualizerPool == null)
+                {
+                    Debug.LogWarning("GridManager: Cell visualizer pool is null!");
+                    return null;
+                }
+        
+                // Otherwise, get one from the pool
+                GameObject cellVisualizer = cellVisualizerPool.Get();
+                if (cellVisualizer == null) return null;
+        
+                // Position the visualizer
+                Vector3 worldPosition = GetWorldPosition(gridPosition);
+                cellVisualizer.transform.position = worldPosition;
+        
+                // Ensure proper scale
+                cellVisualizer.transform.localScale = new Vector3(cellSize, 0.1f, cellSize);
+        
+                // Reset material
+                Renderer renderer = cellVisualizer.GetComponent<Renderer>();
+                if (renderer != null)
+                {
+                    Material material = GetMaterial("default");
+                    if (material != null)
+                    {
+                        renderer.material = material;
+                    }
+                }
+        
+                cellVisualizer.name = $"Cell_{gridPosition.x}_{gridPosition.y}";
+                cellVisualizers.Add(gridPosition, cellVisualizer);
+        
+                return cellVisualizer;
+            }
+            else
+            {
+                // If not using pooling, just return the existing visualizer
+                if (cellVisualizers.TryGetValue(gridPosition, out GameObject visualizer))
+                {
+                    return visualizer;
+                }
+            }
+    
             return null;
         }
-        
-        if (useCellPooling)
-        {
-            // If we already have a visualizer for this position, return it
-            if (cellVisualizers.TryGetValue(gridPosition, out GameObject existingVisualizer))
-            {
-                return existingVisualizer;
-            }
-            
-            // Otherwise, get one from the pool
-            GameObject cellVisualizer = cellVisualizerPool.Get();
-            if (cellVisualizer == null) return null;
-            
-            // Position the visualizer
-            Vector3 worldPosition = GetWorldPosition(gridPosition);
-            cellVisualizer.transform.position = worldPosition;
-            
-            // Ensure proper scale
-            cellVisualizer.transform.localScale = new Vector3(cellSize, 0.1f, cellSize);
-            
-            // Reset material
-            Renderer renderer = cellVisualizer.GetComponent<Renderer>();
-            if (renderer != null)
-            {
-                renderer.material = GetMaterial("default");
-            }
-            
-            cellVisualizer.name = $"Cell_{gridPosition.x}_{gridPosition.y}";
-            cellVisualizers.Add(gridPosition, cellVisualizer);
-            
-            return cellVisualizer;
-        }
-        else
-        {
-            // If not using pooling, just return the existing visualizer
-            if (cellVisualizers.TryGetValue(gridPosition, out GameObject visualizer))
-            {
-                return visualizer;
-            }
-        }
-        
-        return null;
-    }
 
     /// <summary>
     /// Gets the grid cell at the specified position

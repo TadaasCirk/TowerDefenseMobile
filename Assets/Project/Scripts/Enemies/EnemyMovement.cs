@@ -75,7 +75,6 @@ public class EnemyMovement : MonoBehaviour
     
     private void Start()
     {
-        //Debug.Log($"Enemy {gameObject.name} initializing at position: {transform.position}");
         
         GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         marker.transform.parent = this.transform;
@@ -90,7 +89,13 @@ public class EnemyMovement : MonoBehaviour
         if (gridManager == null)
             gridManager = FindObjectOfType<GridManager>();
             
-        // Initialize path but don't override starting position
+        // Subscribe to path change events
+        if (pathfindingManager != null)
+        {
+            pathfindingManager.OnPathChanged += RecalculatePath;
+        }
+    
+        // Initialize path
         StartCoroutine(InitializePathWithDelay());
     }
     
@@ -122,6 +127,16 @@ public class EnemyMovement : MonoBehaviour
         }
     }
     
+    private void OnDestroy()
+    {
+        // Unsubscribe from path change events to prevent memory leaks
+        if (pathfindingManager != null)
+        {
+            pathfindingManager.OnPathChanged -= RecalculatePath;
+        }
+    }
+
+
     /// <summary>
     /// Coroutine to try initializing the path with a delay, with multiple attempts if needed
     /// </summary>
@@ -132,7 +147,6 @@ public class EnemyMovement : MonoBehaviour
         if (TryInitializePath())
         {
             isPathInitialized = true;
-            //Debug.Log($"Path initialized for {gameObject.name} with {worldWaypoints.Count} waypoints");
             
             // Important: Find the closest waypoint to start from rather than teleporting
             if (worldWaypoints != null && worldWaypoints.Count > 1)
@@ -161,7 +175,6 @@ public class EnemyMovement : MonoBehaviour
                     currentWaypointIndex = closestIndex;
                 }
                 
-                //Debug.Log($"Starting from waypoint index: {currentWaypointIndex}");
             }
         }
         else
@@ -174,23 +187,25 @@ public class EnemyMovement : MonoBehaviour
     /// Attempts to initialize the path from the pathfinding manager
     /// </summary>
     /// <returns>True if successful, false otherwise</returns>
+    // In EnemyMovement.cs - enhance TryInitializePath method
     private bool TryInitializePath()
     {
+
         if (pathfindingManager == null || gridManager == null)
         {
             Debug.LogError("Missing required managers for path initialization!");
             return false;
         }
-    
+
         // Get the path from the pathfinding manager - this line needs correcting
         List<Vector2Int> pathPoints = pathfindingManager.GetCurrentPath();
-    
+
         if (pathPoints == null || pathPoints.Count < 2)
         {
             Debug.LogError($"Invalid path received for {gameObject.name}! Count: {pathPoints?.Count ?? 0}");
             return false;
         }
-    
+
         // Convert grid positions to world positions with proper height
         worldWaypoints = new List<Vector3>();
         foreach (Vector2Int gridPos in pathPoints)
@@ -200,10 +215,10 @@ public class EnemyMovement : MonoBehaviour
             worldPos.y = transform.position.y;
             worldWaypoints.Add(worldPos);
         }
-    
+
         // Don't teleport to first waypoint, just set the index to 0
         currentWaypointIndex = 0;
-    
+
         return true;
     }
 
@@ -235,10 +250,10 @@ public class EnemyMovement : MonoBehaviour
 
         // Update speed modifiers
         UpdateSpeedModifiers();
-        
+    
         // Move towards current waypoint
         MoveTowardsWaypoint();
-        
+    
         // Rotate towards movement direction
         if (smoothRotation && currentMoveDirection != Vector3.zero)
         {
@@ -251,15 +266,10 @@ public class EnemyMovement : MonoBehaviour
     /// </summary>
     private void MoveTowardsWaypoint()
     {
-
-        //Debug.Log($"Moving towards waypoint {currentWaypointIndex}, current pos: {transform.position}, target: {worldWaypoints[currentWaypointIndex]}");
-    
         Vector3 targetPosition1 = worldWaypoints[currentWaypointIndex];
         Vector3 direction = (targetPosition1 - transform.position).normalized;
         float distance = Vector3.Distance(transform.position, targetPosition1);
     
-        //Debug.Log($"Distance: {distance}, Direction: {direction}, Speed: {moveSpeed}");
-
         // Get the current target waypoint
         Vector3 targetPosition = worldWaypoints[currentWaypointIndex];
         
@@ -411,82 +421,76 @@ public class EnemyMovement : MonoBehaviour
     /// </summary>
     public void RecalculatePath()
     {
-        // Only recalculate if we haven't completed the path yet and path is initialized
+        // Only recalculate if we haven't completed the path yet
         if (!pathComplete && isPathInitialized && pathfindingManager != null)
         {
-            // Store current progress ratio along path segment
+            // Store current position for progress calculation
             Vector3 currentPos = transform.position;
-            
+        
             // Get updated path
             pathWaypoints = pathfindingManager.GetCurrentPath();
-            
+        
             if (pathWaypoints == null || pathWaypoints.Count < 2)
             {
                 Debug.LogWarning("EnemyMovement: Invalid path received during recalculation!");
                 return;
             }
-            
+        
             // Convert to world positions
             worldWaypoints = new List<Vector3>();
             foreach (Vector2Int gridPos in pathWaypoints)
             {
                 Vector3 worldPos = gridManager.GetWorldPosition(gridPos);
-                worldPos.y += transform.position.y;
+                // Use the same Y position as the enemy
+                worldPos.y = transform.position.y;
                 worldWaypoints.Add(worldPos);
             }
-            
+        
             // Find the closest point on the new path to continue from
-            FindClosestPathPosition();
+            FindClosestPathPosition(currentPos);
         }
     }
-    
-    /// <summary>
-    /// Finds the closest position on the path to continue from after recalculation
-    /// </summary>
-    private void FindClosestPathPosition()
+
+    private void FindClosestPathPosition(Vector3 currentPos)
     {
-        Vector3 currentPos = transform.position;
         float closestDistance = float.MaxValue;
         int closestIndex = 0;
-        
-        // Find the closest waypoint to current position
+    
+        // Find the closest segment of the path to the current position
         for (int i = 0; i < worldWaypoints.Count - 1; i++)
         {
-            Vector3 pointOnLine = GetClosestPointOnLine(worldWaypoints[i], worldWaypoints[i + 1], currentPos);
+            Vector3 pointOnLine = GetClosestPointOnLine(worldWaypoints[i], worldWaypoints[i+1], currentPos);
             float distance = Vector3.Distance(currentPos, pointOnLine);
-            
+        
             if (distance < closestDistance)
             {
                 closestDistance = distance;
                 closestIndex = i;
             }
         }
-        
-        // Set the next waypoint index
+    
+        // Set the next waypoint index based on the closest segment
         currentWaypointIndex = closestIndex + 1;
-        
+    
         // Make sure we don't go out of bounds
         if (currentWaypointIndex >= worldWaypoints.Count)
         {
             currentWaypointIndex = worldWaypoints.Count - 1;
         }
     }
-    
-    /// <summary>
-    /// Gets the closest point on a line segment to a given point
-    /// </summary>
+
     private Vector3 GetClosestPointOnLine(Vector3 lineStart, Vector3 lineEnd, Vector3 point)
     {
         Vector3 lineDirection = lineEnd - lineStart;
         float lineLength = lineDirection.magnitude;
         lineDirection.Normalize();
-        
+    
         Vector3 pointToLineStart = point - lineStart;
         float projectionLength = Vector3.Dot(pointToLineStart, lineDirection);
-        
+    
         // Clamp projection to line segment
         projectionLength = Mathf.Clamp(projectionLength, 0f, lineLength);
-        
+    
         return lineStart + lineDirection * projectionLength;
     }
     

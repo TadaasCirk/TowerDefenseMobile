@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using System.Linq;
 using TowerDefense.Core;
+using System.Collections;
 
 /// <summary>
 /// Manages pathfinding for the tower defense game using A* algorithm.
@@ -31,6 +32,7 @@ public class PathfindingManager : MonoBehaviour
 
     // The current calculated path
     private List<Vector2Int> currentPath = new List<Vector2Int>();
+    public event System.Action OnPathChanged;
 
     // The start and end positions in grid coordinates
     private Vector2Int startGridPos;
@@ -94,45 +96,43 @@ public class PathfindingManager : MonoBehaviour
         ServiceLocator.Register<PathfindingManager>(this);
     }
 
-    // In PathfindingManager.cs - add more detailed logging to Start method
-    private void Start()
-    {
-        //Debug.Log("PathfindingManager Start - Beginning initialization");
-    
-        // Find dependencies if not assigned in Inspector
-        ResolveDependencies();
-    
-        // Calculate initial grid positions for entry and exit
-        if (entryPoint != null && exitPoint != null && gridManager != null)
+        private void Start()
         {
-            startGridPos = gridManager.GetGridPosition(entryPoint.position);
-            endGridPos = gridManager.GetGridPosition(exitPoint.position);
-
-            //Debug.Log($"Entry point world: {entryPoint.position}, grid: {startGridPos}, back to world: {gridManager.GetWorldPosition(startGridPos)}");
-            //Debug.Log($"Exit point world: {exitPoint.position}, grid: {endGridPos}, back to world: {gridManager.GetWorldPosition(endGridPos)}");
-        }
-        else
-        {
-            Debug.LogError("PathfindingManager: Missing required references for initialization!");
-            if (entryPoint == null) Debug.LogError("- EntryPoint is null");
-            if (exitPoint == null) Debug.LogError("- ExitPoint is null");
-            if (gridManager == null) Debug.LogError("- GridManager is null");
-            return;
+            // Wait a frame before initializing to ensure all other systems are ready
+            StartCoroutine(DelayedInitialization());
         }
 
-        // Initial path calculation
-        RecalculatePath();
-    
-        if (gridManager != null && entryPoint != null)
+        private IEnumerator DelayedInitialization()
         {
-            gridManager.SetPathHeight(entryPoint.position.y);
-        }   
-
-
-        // Mark as initialized after initial calculation
-        isInitialized = true;
-       // Debug.Log("PathfindingManager: Initialization complete");
-    }
+            // Wait for the end of the frame to ensure other systems are initialized
+            yield return new WaitForEndOfFrame();
+    
+            // Find dependencies if not assigned in Inspector
+            ResolveDependencies();
+    
+            // Calculate initial grid positions for entry and exit
+            if (entryPoint != null && exitPoint != null && gridManager != null)
+            {
+                startGridPos = gridManager.GetGridPosition(entryPoint.position);
+                endGridPos = gridManager.GetGridPosition(exitPoint.position);
+            }
+            else
+            {
+                Debug.LogError("PathfindingManager: Missing required references for initialization!");
+                yield break;
+            }
+    
+            // Initial path calculation
+            RecalculatePath();
+    
+            if (gridManager != null && entryPoint != null)
+            {
+                gridManager.SetPathHeight(entryPoint.position.y);
+            }
+    
+            // Mark as initialized after initial calculation
+            isInitialized = true;
+        }
     
     private void OnDestroy()
     {
@@ -188,11 +188,13 @@ public class PathfindingManager : MonoBehaviour
 
         // Find the path using A*
         List<Vector2Int> newPath = FindPath(startGridPos, endGridPos);
-        
+    
         if (newPath != null && newPath.Count > 0)
         {
             currentPath = newPath;
-            //Debug.Log($"PathfindingManager: Path recalculated with {currentPath.Count} nodes from {startGridPos} to {endGridPos}");
+        
+            // Notify all listeners that the path has changed
+            OnPathChanged?.Invoke();
         }
         else
         {
