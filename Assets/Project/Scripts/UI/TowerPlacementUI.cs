@@ -76,10 +76,6 @@ namespace TowerDefense.UI
                 towerInfoPanel.SetActive(false);
             }
         }
-        public void TestButtonClick()
-        {
-            Debug.Log("Button clicked through inspector event!");
-        }
 
         private void Start()
         {
@@ -92,9 +88,6 @@ namespace TowerDefense.UI
                 Debug.LogError("TowerPlacementUI: TowerManager not found!");
                 return;
             }
-
-            Debug.Log("TowerPlacementUI Start");
-            Debug.Log($"TowerManager found: {towerManager != null}");
 
             // Set up cancel button
             if (cancelButton != null)
@@ -175,10 +168,9 @@ namespace TowerDefense.UI
             towerButtons.Clear();
 
 
-            Debug.Log("GenerateTowerButtons called");
-            if (towerManager != null) {
+            if (towerManager != null) 
+            {
                 var unlockedTowers1 = towerManager.GetUnlockedTowerDefinitions();
-                Debug.Log($"Unlocked towers count: {unlockedTowers1?.Count ?? 0}");
             }
 
             // Get unlocked tower definitions
@@ -350,8 +342,6 @@ namespace TowerDefense.UI
         /// </summary>
         public void OnPlaceTowerButtonClicked()
         {
-            Debug.Log("Place tower button clicked");
-    
             // Make sure we have a selected tower and a tower manager
             if (selectedTowerDefinition == null || towerManager == null)
             {

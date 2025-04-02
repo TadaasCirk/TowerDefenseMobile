@@ -56,8 +56,8 @@ namespace TowerDefense.Core
             currentHealth = playerHealth;
             currentGold = startingGold;
             
-            // Register any additional interfaces this manager implements
-            // Example: ServiceLocator.Register<IPlayerStats>(this);
+            // Register with ServiceLocator
+            ServiceLocator.Register<GameManager>(this);
             
             Debug.Log("GameManager initialized and registered with ServiceLocator");
         }
@@ -161,12 +161,17 @@ namespace TowerDefense.Core
         /// </summary>
         public bool SpendGold(int amount)
         {
+            Debug.Log($"SpendGold: Attempting to spend {amount} gold. Current gold: {currentGold}");
+            
             if (currentGold >= amount)
             {
                 currentGold -= amount;
+                Debug.Log($"SpendGold: Spent {amount} gold. New balance: {currentGold}");
                 OnGoldChanged?.Invoke(currentGold);
                 return true;
             }
+            
+            Debug.Log("SpendGold: Not enough gold");
             return false;
         }
 
@@ -367,6 +372,45 @@ namespace TowerDefense.Core
         public int GetCurrentLevel()
         {
             return currentLevel;
+        }
+
+        /// <summary>
+        /// Get the player's current experience
+        /// </summary>
+        public int GetExperience()
+        {
+            return playerExperience;
+        }
+
+        /// <summary>
+        /// Set the player's health directly (for testing/debugging)
+        /// </summary>
+        public void SetHealth(int health)
+        {
+            currentHealth = Mathf.Max(0, health);
+            OnHealthChanged?.Invoke(currentHealth);
+            
+            if (currentHealth <= 0 && !isGameOver)
+            {
+                GameOver();
+            }
+        }
+
+        /// <summary>
+        /// Set the player's gold directly (for testing/debugging)
+        /// </summary>
+        public void SetGold(int gold)
+        {
+            currentGold = Mathf.Max(0, gold);
+            OnGoldChanged?.Invoke(currentGold);
+        }
+
+        /// <summary>
+        /// Check if the level is complete
+        /// </summary>
+        public bool IsLevelComplete()
+        {
+            return isLevelComplete;
         }
     }
 }

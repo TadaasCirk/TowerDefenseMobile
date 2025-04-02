@@ -330,7 +330,7 @@ public class EnemySpawner : MonoBehaviour
         GameObject enemyObj = Instantiate(enemyPrefab, spawnPosition, Quaternion.identity);
         enemyObj.transform.SetParent(transform);
         
-        Debug.Log($"Enemy spawned at position: {spawnPosition}");
+        //Debug.Log($"Enemy spawned at position: {spawnPosition}");
         // Get and initialize enemy controller
         EnemyController enemyController = enemyObj.GetComponent<EnemyController>();
         
