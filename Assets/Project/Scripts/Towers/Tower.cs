@@ -49,6 +49,21 @@ namespace TowerDefense.Towers
         
         [Tooltip("The projectile prefab to instantiate")]
         [SerializeField] private GameObject projectilePrefab;
+        
+        [Tooltip("ID of the projectile in the pool")]
+        [SerializeField] private string projectilePoolID = "standard";
+        
+        [Tooltip("Should the projectile use homing?")]
+        [SerializeField] private bool useHomingProjectiles = false;
+        
+        [Tooltip("Homing strength for projectiles")]
+        [SerializeField] private float homingStrength = 5f;
+        
+        [Tooltip("Area damage radius (0 for single-target)")]
+        [SerializeField] private float areaDamageRadius = 0f;
+        
+        [Tooltip("Projectile speed")]
+        [SerializeField] private float projectileSpeed = 10f;
 
         [Header("Visuals")]
         [Tooltip("Visual representation for each upgrade level")]
@@ -59,6 +74,15 @@ namespace TowerDefense.Towers
         
         [Tooltip("Audio clip played when attacking")]
         [SerializeField] private AudioClip attackSound;
+        
+        [Tooltip("Should the tower head rotate to face targets?")]
+        [SerializeField] private bool rotateToTarget = true;
+        
+        [Tooltip("Transform that rotates to face the target (if null, uses this transform)")]
+        [SerializeField] private Transform turretTransform;
+        
+        [Tooltip("How quickly the turret rotates to face targets")]
+        [SerializeField] private float turretRotationSpeed = 8f;
 
         [Header("Economy")]
         [Tooltip("Base cost to purchase this tower")]
@@ -69,6 +93,13 @@ namespace TowerDefense.Towers
         
         [Tooltip("Sell value as a percentage of total investment")]
         [SerializeField] private float sellValuePercent = 0.7f;
+        
+        [Header("Debug")]
+        [Tooltip("Show attack range gizmo")]
+        [SerializeField] private bool showRangeGizmo = true;
+        
+        [Tooltip("Show target indicators")]
+        [SerializeField] private bool showTargetIndicators = false;
 
         // Reference to the tower definition
         private TowerDefinition definition;
@@ -77,13 +108,18 @@ namespace TowerDefense.Towers
         public TowerDefinition GetDefinition() => definition;   
 
         // Runtime properties
-        private float attackCooldown = 0f;
-        private List<EnemyController> enemiesInRange = new List<EnemyController>();
-        private EnemyController currentTarget;
-        private bool isAttacking = false;
+        protected float attackCooldown = 0f;
+        protected List<EnemyController> enemiesInRange = new List<EnemyController>();
+        protected EnemyController currentTarget;
+        protected bool isAttacking = false;
+        protected int uniqueTowerID; 
         
         // Component references
         private AudioSource audioSource;
+        private SphereCollider rangeCollider;
+        
+        // Cached target position for rotation
+        private Vector3 targetPosition;
 
         // Events
         public System.Action<Tower> OnTowerSold;
@@ -98,31 +134,47 @@ namespace TowerDefense.Towers
         /// </summary>
         public void Initialize(TowerDefinition definition)
         {
-            towerID = definition.towerID;
-            displayName = definition.displayName;
-            maxLevel = definition.maxLevel;
+            // Existing initialization code...
     
-            // Set attack properties
-            attackRange = definition.attackRange;
-            attackRate = definition.attackRate;
-            attackDamage = definition.attackDamage;
-            damageType = definition.damageType;
-            canTargetFlying = definition.canTargetFlying;
+            // Initialize weapon data if available
+            if (definition.weaponData != null)
+            {
+                projectilePrefab = definition.weaponData.projectilePrefab;
+                projectilePoolID = definition.weaponData.projectilePoolID;
+                projectileSpeed = definition.weaponData.projectileSpeed;
+                useHomingProjectiles = definition.weaponData.useHoming;
+                homingStrength = definition.weaponData.homingStrength;
+                areaDamageRadius = definition.weaponData.hasAreaDamage ? definition.weaponData.areaDamageRadius : 0f;
+                damageType = definition.weaponData.damageType;
+        
+                // Set up effects if available
+                if (definition.weaponData.muzzleEffectPrefab != null && attackEffect == null)
+                {
+                    GameObject effectObj = Instantiate(definition.weaponData.muzzleEffectPrefab, firingPoint);
+                    attackEffect = effectObj.GetComponent<ParticleSystem>();
+                }
+        
+                if (definition.weaponData.firingSound != null && attackSound == null)
+                {
+                    attackSound = definition.weaponData.firingSound;
+                }
+            }
     
-            // Set economy values
-            purchaseCost = definition.purchaseCost;
-            upgradeCosts = definition.upgradeCosts;
-            sellValuePercent = definition.sellValuePercent;
+    // Store a reference to the definition for later use
+    this.definition = definition;
     
-            // Store a reference to the definition for later use
-            this.definition = definition;
+    // Generate a unique ID for this tower instance
+    uniqueTowerID = GetInstanceID();
+
+    // Update visuals for initial level
+    UpdateVisuals();
     
-            // Update visuals for initial level
-            UpdateVisuals();
-        }
+    // Configure range collider
+    SetupRangeCollider();
+}
 
 
-        private void Awake()
+        protected virtual void Awake()
         {
             // Get required components
             audioSource = GetComponent<AudioSource>();
@@ -133,22 +185,64 @@ namespace TowerDefense.Towers
                 audioSource.spatialBlend = 0f; // 2D sound
             }
             
+            // Get or create turret transform
+            if (turretTransform == null)
+            {
+                turretTransform = transform;
+            }
+            
+            // Get or create firing point
+            if (firingPoint == null)
+            {
+                // Create a firing point at the top of the tower
+                GameObject fp = new GameObject("FiringPoint");
+                fp.transform.parent = turretTransform;
+                fp.transform.localPosition = Vector3.up * 0.5f; // Slightly above tower center
+                firingPoint = fp.transform;
+            }
+            
+            // Generate unique tower ID if not initialized via definition
+            if (uniqueTowerID == 0)
+            {
+                uniqueTowerID = GetInstanceID();
+            }
+            
             // Ensure the correct visual for the current level is active
             UpdateVisuals();
+            
+            // Setup range trigger collider
+            SetupRangeCollider();
         }
 
         private void Start()
         {
-            // Subscribe to events or initialize other components
+            // Create visual debug sphere to show range
+            GameObject debugSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            debugSphere.transform.SetParent(transform);
+            debugSphere.transform.localPosition = Vector3.zero;
+            debugSphere.transform.localScale = new Vector3(attackRange * 2, attackRange * 2, attackRange * 2);
+    
+            // Make it semi-transparent
+            Renderer renderer = debugSphere.GetComponent<Renderer>();
+            Color rangeColor = new Color(0, 0.5f, 1f, 0.3f);
+            renderer.material.color = rangeColor;
+    
+            // Remove the collider from the debug sphere so it doesn't interfere
+            Destroy(debugSphere.GetComponent<Collider>());
+    
+            debugSphere.name = "DebugRangeSphere";
+            // Initialize attack cooldown with a slight random offset
+            // This prevents all towers of the same type from firing simultaneously
+            attackCooldown = Random.Range(0f, 0.5f);
         }
 
         private void OnEnable()
         {
             // Reset attack cooldown when enabling the tower
-            attackCooldown = 0f;
+            attackCooldown = Random.Range(0f, 0.5f);
         }
 
-        private void Update()
+        protected virtual void Update()
         {
             // Handle attack cooldown
             if (attackCooldown > 0)
@@ -167,23 +261,71 @@ namespace TowerDefense.Towers
                 }
             }
             
+            // Handle turret rotation if we have a target
+            if (rotateToTarget && currentTarget != null)
+            {
+                RotateTurretToTarget();
+            }
+            
             // Clean up the enemies in range list (remove null or inactive enemies)
             CleanEnemiesInRangeList();
         }
 
         private void OnDrawGizmosSelected()
         {
-            // Draw attack range when selected in the editor
-            Gizmos.color = Color.cyan;
-            Gizmos.DrawWireSphere(transform.position, attackRange);
+            if (showRangeGizmo)
+            {
+                // Draw attack range when selected in the editor
+                Gizmos.color = new Color(0f, 0.5f, 1f, 0.3f);
+                Gizmos.DrawSphere(transform.position, attackRange);
+            }
+            
+            // Draw line to current target if debugging
+            if (Application.isPlaying && showTargetIndicators && currentTarget != null)
+            {
+                Gizmos.color = Color.red;
+                Vector3 startPos = firingPoint != null ? firingPoint.position : transform.position;
+                Gizmos.DrawLine(startPos, currentTarget.transform.position);
+            }
+        }
+
+        /// <summary>
+        /// Set up the range collider for detecting enemies
+        /// </summary>
+        private void SetupRangeCollider()
+        {
+            // Get or add a SphereCollider component
+            rangeCollider = GetComponent<SphereCollider>();
+            if (rangeCollider == null)
+            {
+                rangeCollider = gameObject.AddComponent<SphereCollider>();
+            }
+            
+            // Configure the collider
+            rangeCollider.radius = attackRange;
+            rangeCollider.isTrigger = true;
+            rangeCollider.enabled = true;
+        }
+
+        /// <summary>
+        /// Updates the range collider radius
+        /// </summary>
+        private void UpdateRangeCollider()
+        {
+            if (rangeCollider != null)
+            {
+                rangeCollider.radius = attackRange;
+            }
         }
 
         private void OnTriggerEnter(Collider other)
         {
+            Debug.Log($"Something entered trigger: {other.gameObject.name}, Layer: {other.gameObject.layer}");
             // Check if an enemy entered the range
             EnemyController enemy = other.GetComponent<EnemyController>();
             if (enemy != null)
             {
+                Debug.Log($"Enemy entered tower range: {enemy.name}");
                 AddEnemyToRangeList(enemy);
             }
         }
@@ -201,6 +343,33 @@ namespace TowerDefense.Towers
         #endregion
 
         #region Targeting
+
+        /// <summary>
+        /// Rotates the turret to face the current target
+        /// </summary>
+        private void RotateTurretToTarget()
+        {
+            if (currentTarget == null || turretTransform == null)
+                return;
+                
+            // Get target position, ignoring Y difference
+            Vector3 targetPos = currentTarget.transform.position;
+            Vector3 directionToTarget = targetPos - turretTransform.position;
+            directionToTarget.y = 0; // Keep rotation on XZ plane
+            
+            if (directionToTarget != Vector3.zero)
+            {
+                // Create rotation towards target
+                Quaternion targetRotation = Quaternion.LookRotation(directionToTarget);
+                
+                // Smoothly rotate
+                turretTransform.rotation = Quaternion.Slerp(
+                    turretTransform.rotation,
+                    targetRotation,
+                    turretRotationSpeed * Time.deltaTime
+                );
+            }
+        }
 
         /// <summary>
         /// Selects a target from the enemies in range based on targeting method
@@ -265,12 +434,11 @@ namespace TowerDefense.Towers
                 if (enemy == null || !enemy.gameObject.activeInHierarchy)
                     continue;
                     
-                // Check if we can target flying enemies
-                /*
-                bool isFlying = enemy.IsFlying;
+                // Check if we can target flying enemies (if implemented in enemy)
+                // This is left as a placeholder for a future flying enemy flag implementation
+                bool isFlying = false; // enemy.IsFlying;
                 if (isFlying && !canTargetFlying)
                     continue;
-                */
                 
                 // Add to valid targets
                 validTargets.Add(enemy);
@@ -284,26 +452,12 @@ namespace TowerDefense.Towers
         /// </summary>
         private EnemyController GetFirstEnemy(List<EnemyController> targets)
         {
-            EnemyController firstEnemy = null;
-            float furthestProgress = -1f;
-            
-            foreach (var enemy in targets)
-            {
-                /*
-                // This requires the enemies to have a PathProgress property
-                float progress = enemy.GetPathProgress();
-                if (progress > furthestProgress)
-                {
-                    furthestProgress = progress;
-                    firstEnemy = enemy;
-                }
-                */
+            // Implementation depends on enemy path progress tracking
+            // For now, returning the first enemy in the list
+            if (targets.Count > 0)
+                return targets[0];
                 
-                // For now, just return the first one
-                return enemy;
-            }
-            
-            return firstEnemy;
+            return null;
         }
 
         /// <summary>
@@ -415,64 +569,98 @@ namespace TowerDefense.Towers
 
         #region Combat
 
-        /// <summary>
-        /// Performs an attack on the current target
-        /// </summary>
-        private void Attack()
+        protected virtual void Attack()
         {
-            if (currentTarget == null || firingPoint == null || projectilePrefab == null)
+            if (currentTarget == null || firingPoint == null)
                 return;
-                
+            Debug.Log("Tower attacking!");
             // Start attack cooldown
             attackCooldown = attackRate;
-            
+    
             // Play effects
-            if (attackEffect != null)
-            {
-                attackEffect.Play();
-            }
-            
-            if (audioSource != null && attackSound != null)
-            {
-                audioSource.PlayOneShot(attackSound);
-            }
-            
-            // Spawn projectile
-            SpawnProjectile();
-            
+            PlayAttackEffects();
+    
+            // Fire projectile
+            FireProjectile();
+    
             // Notify listeners
             OnAttack?.Invoke(this, currentTarget);
         }
 
         /// <summary>
-        /// Spawns a projectile aimed at the current target
+        /// Plays visual and audio effects for the attack
         /// </summary>
-        private void SpawnProjectile()
+        private void PlayAttackEffects()
         {
-            // Instantiate projectile
-            GameObject projectileObj = Instantiate(
-                projectilePrefab, 
-                firingPoint.position, 
-                firingPoint.rotation);
-                
-            // Get projectile component
-            /* 
-            // This will be implemented when we create the Projectile class
-            Projectile projectile = projectileObj.GetComponent<Projectile>();
-            if (projectile != null)
+            // Play particle effect if available
+            if (attackEffect != null)
             {
-                projectile.Initialize(currentTarget, attackDamage, damageType);
+                attackEffect.Play();
             }
-            */
+            
+            // Play audio if available
+            if (audioSource != null && attackSound != null)
+            {
+                audioSource.PlayOneShot(attackSound);
+            }
         }
 
         /// <summary>
-        /// Applies area damage to all enemies in a radius
+        /// Fires a projectile at the current target
         /// </summary>
-        protected virtual void ApplyAreaDamage(Vector3 center, float radius, float damage)
+        private void FireProjectile()
         {
-            // This is a placeholder for towers that deal area damage
-            // To be implemented in derived classes
+            if (currentTarget == null || firingPoint == null)
+                return;
+                
+            // Check if we should use object pooling or direct instantiation
+            if (ProjectilePool.Instance != null)
+            {
+                // Get projectile from pool
+                GameObject projectileObj = ProjectilePool.Instance.GetProjectile(projectilePoolID);
+                
+                if (projectileObj != null)
+                {
+                    // Position and initialize the projectile
+                    projectileObj.transform.position = firingPoint.position;
+                    
+                    Projectile projectile = projectileObj.GetComponent<Projectile>();
+                    if (projectile != null)
+                    {
+                        // Initialize with target
+                        projectile.Initialize(currentTarget.transform, attackDamage, damageType, uniqueTowerID);
+                        
+                        // Configure projectile properties
+                        projectile.SetSpeed(projectileSpeed);
+                        projectile.SetHoming(useHomingProjectiles, homingStrength);
+                        projectile.SetAreaRadius(areaDamageRadius);
+                    }
+                }
+            }
+            else
+            {
+                // Direct instantiation as fallback
+                if (projectilePrefab != null)
+                {
+                    GameObject projectileObj = Instantiate(projectilePrefab, firingPoint.position, Quaternion.identity);
+                    Projectile projectile = projectileObj.GetComponent<Projectile>();
+                    
+                    if (projectile != null)
+                    {
+                        // Initialize with target
+                        projectile.Initialize(currentTarget.transform, attackDamage, damageType, uniqueTowerID);
+                        
+                        // Configure projectile properties
+                        projectile.SetSpeed(projectileSpeed);
+                        projectile.SetHoming(useHomingProjectiles, homingStrength);
+                        projectile.SetAreaRadius(areaDamageRadius);
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning("Tower: No projectile prefab assigned and no pool available");
+                }
+            }
         }
 
         #endregion
@@ -493,13 +681,11 @@ namespace TowerDefense.Towers
             
             // Check if we have enough gold (would need GameManager reference)
             int upgradeCost = GetUpgradeCost();
-            /*
             GameManager gameManager = ServiceLocator.Get<GameManager>();
             if (gameManager != null && !gameManager.SpendGold(upgradeCost))
             {
                 return false;
             }
-            */
             
             // Perform upgrade
             level++;
@@ -509,6 +695,9 @@ namespace TowerDefense.Towers
             
             // Update visual representation
             UpdateVisuals();
+            
+            // Update range collider
+            UpdateRangeCollider();
             
             // Notify listeners
             OnTowerUpgraded?.Invoke(this, level);
@@ -539,13 +728,11 @@ namespace TowerDefense.Towers
             OnTowerSold?.Invoke(this);
             
             // Add gold to player (would need GameManager reference)
-            /*
             GameManager gameManager = ServiceLocator.Get<GameManager>();
             if (gameManager != null)
             {
                 gameManager.AddGold(sellValue);
             }
-            */
             
             // Destroy the tower
             Destroy(gameObject);
@@ -558,13 +745,23 @@ namespace TowerDefense.Towers
         /// </summary>
         private void UpdateStatsForLevel()
         {
-            // This is a simple linear scaling, can be overridden in derived classes
-            float levelMultiplier = 1f + (level - 1) * 0.25f;
-            
-            // Scale attack properties
-            attackDamage = GetBaseDamage() * levelMultiplier;
-            attackRange = GetBaseRange() * Mathf.Sqrt(levelMultiplier);
-            attackRate = GetBaseAttackRate() / Mathf.Sqrt(levelMultiplier);
+            if (definition != null)
+            {
+                // Use multipliers from definition
+                attackDamage = definition.attackDamage * definition.GetDamageMultiplier(level);
+                attackRange = definition.attackRange * definition.GetRangeMultiplier(level);
+                attackRate = definition.attackRate * definition.GetAttackRateMultiplier(level);
+            }
+            else
+            {
+                // This is a simple linear scaling, can be overridden in derived classes
+                float levelMultiplier = 1f + (level - 1) * 0.25f;
+                
+                // Scale attack properties
+                attackDamage = GetBaseDamage() * levelMultiplier;
+                attackRange = GetBaseRange() * Mathf.Sqrt(levelMultiplier);
+                attackRate = GetBaseAttackRate() / Mathf.Sqrt(levelMultiplier);
+            }
         }
 
         /// <summary>
@@ -613,6 +810,13 @@ namespace TowerDefense.Towers
             {
                 return upgradeCosts[upgradeIndex];
             }
+            
+            // Use definition if available
+            if (definition != null)
+            {
+                return definition.GetUpgradeCost(level);
+            }
+            
             return 0;
         }
         
@@ -627,6 +831,9 @@ namespace TowerDefense.Towers
         public void SetTargetingMethod(TargetingMethod method)
         {
             targetingMethod = method;
+            
+            // Re-acquire target with new method
+            AcquireTarget();
         }
         
         public TargetingMethod GetTargetingMethod() => targetingMethod;
@@ -644,4 +851,5 @@ namespace TowerDefense.Towers
         Strongest,  // Target enemy with the most health
         Weakest     // Target enemy with the least health
     }
+
 }

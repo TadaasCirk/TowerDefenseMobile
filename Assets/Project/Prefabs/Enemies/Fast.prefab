@@ -121,7 +121,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b1fe0ef6b7bfe2349ab52f846e78cfbf, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxHealth: 100
+  maxHealth: 10
   damageToPlayer: 1
   goldReward: 10
   experienceReward: 5
@@ -146,7 +146,6 @@ MonoBehaviour:
   waypointThreshold: 0.1
   smoothRotation: 1
   rotationSpeed: 10
-  heightOffset: 0.5
   maxInitAttempts: 3
   initRetryDelay: 0.2
   reachEndEffectPrefab: {fileID: 0}

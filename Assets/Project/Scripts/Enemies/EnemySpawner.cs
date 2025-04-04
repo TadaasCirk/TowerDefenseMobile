@@ -301,7 +301,6 @@ public class EnemySpawner : MonoBehaviour
             {
                 SpawnEnemy(enemyGroup.enemyPrefab, enemyGroup.difficultyMultiplier);
                 enemiesSpawnedInCurrentWave++;
-                Debug.Log($"enemiesSpawnedInCurrentWave {enemiesSpawnedInCurrentWave}");
                 // Wait between spawns
                 yield return new WaitForSeconds(enemyGroup.timeBetweenSpawns);
             }
@@ -329,7 +328,6 @@ public class EnemySpawner : MonoBehaviour
         GameObject enemyObj = Instantiate(enemyPrefab, spawnPosition, Quaternion.identity);
         enemyObj.transform.SetParent(transform);
         
-        Debug.Log($"Enemy spawned at position: {spawnPosition}");
         // Get and initialize enemy controller
         EnemyController enemyController = enemyObj.GetComponent<EnemyController>();
         
@@ -339,7 +337,6 @@ public class EnemySpawner : MonoBehaviour
             Destroy(enemyObj);
             return;
         }
-         Debug.Log("EnemySpawner: got enemyController");
 
         // Subscribe to enemy events
         enemyController.OnEnemyDefeated += HandleEnemyDefeated;

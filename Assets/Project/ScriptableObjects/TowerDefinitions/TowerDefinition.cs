@@ -14,6 +14,10 @@ namespace TowerDefense.Towers
         [Header("Basic Info")]
         [Tooltip("Unique identifier for this tower type")]
         public string towerID;
+
+        [Header("Weapon Configuration")]
+        [Tooltip("Weapon data for this tower")]
+        public WeaponData weaponData;
         
         [Tooltip("Display name of the tower shown in UI")]
         public string displayName;
