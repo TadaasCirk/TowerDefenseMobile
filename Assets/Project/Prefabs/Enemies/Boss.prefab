@@ -46,11 +46,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 48025da5412882049ae98b46ed5fc4a2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  moveSpeed: 2
+  moveSpeed: 1
   waypointThreshold: 0.1
   smoothRotation: 1
   rotationSpeed: 10
-  heightOffset: 7.5
   maxInitAttempts: 3
   initRetryDelay: 0.2
   reachEndEffectPrefab: {fileID: 0}

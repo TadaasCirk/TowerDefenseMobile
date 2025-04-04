@@ -1,6 +1,7 @@
 using System;
 using UnityEngine;
 using TowerDefense.Core;
+using System.Collections;
 
 /// <summary>
 /// Controls the core functionality of an enemy in the tower defense game.
@@ -283,7 +284,64 @@ public class EnemyController : MonoBehaviour
         OnEnemyDefeated = null;
         OnEnemyReachedEnd = null;
     }
+
+    public void ApplyStatusEffect(StatusEffectType effectType, float duration, float effectStrength)
+    {
+        switch (effectType)
+        {
+            case StatusEffectType.Slow:
+                // Apply slow effect to movement
+                EnemyMovement movement = GetComponent<EnemyMovement>();
+                if (movement != null)
+                {
+                    // Use a unique ID based on effect type
+                    int slowId = (int)StatusEffectType.Slow;
+                    movement.AddSpeedModifier(slowId, 1f - effectStrength, duration);
+                }
+                break;
+            
+            case StatusEffectType.Burning:
+                // Apply DOT effect
+                StartCoroutine(BurningEffect(duration, effectStrength));
+                break;
+            
+        }       
+            // Add more effect types as needed
+    }
+    /// <summary>
+    /// Coroutine for burning damage over time
+    /// </summary>
+    private IEnumerator BurningEffect(float duration, float damagePerSecond)
+    {
+        float elapsedTime = 0f;
+        float tickInterval = 0.5f; // Apply damage every 0.5 seconds
+    
+        while (elapsedTime < duration)
+        {
+            // Apply damage each tick
+            float tickDamage = damagePerSecond * tickInterval;
+            TakeDamage(tickDamage, DamageType.Fire);
+        
+            // Wait for next tick
+            yield return new WaitForSeconds(tickInterval);
+            elapsedTime += tickInterval;
+        }
+    }
 }
+
+
+/// <summary>
+/// Enum for different status effect types
+/// </summary>
+public enum StatusEffectType
+{
+    None,
+    Slow,
+    Burning,
+    Poisoned,
+    Stunned
+}
+
 
 /// <summary>
 /// Types of damage that can be dealt to enemies

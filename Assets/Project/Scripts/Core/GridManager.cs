@@ -140,14 +140,6 @@ public class GridManager : MonoBehaviour
             cellVisualizerPool.Clear();
         }
         
-        // Clear material cache
-        foreach (var material in materialCache.Values)
-        {
-            if (material != null && !material.hideFlags.HasFlag(HideFlags.NotEditable))
-            {
-                Destroy(material);
-            }
-        }
         materialCache.Clear();
     }
     
